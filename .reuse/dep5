@@ -2,7 +2,7 @@ Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: opennebula-nhc
 Source: https://github.com/SergioZ3R0/opennebula-nhc
 
-Files: LICENSE NOTICE README.md CONTRIBUTORS .gitignore
+Files: LICENSE NOTICE README.md CONTRIBUTORS CONTRIBUTING.md .editorconfig .gitignore
 Copyright: 2026 SergioZ3R0
 License: Apache-2.0
 

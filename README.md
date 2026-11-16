@@ -135,9 +135,11 @@ cooldowns, `--dry-run` and must never disable the last healthy host.
 make test   # ruby -Ilib -Itests tests/run.rb
 ```
 
-## Contributors
+## Contributing
 
-See [CONTRIBUTORS](CONTRIBUTORS).
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for the rules (read-only probes, no
+runtime gems, uniform check contract, SPDX headers, tests and Conventional
+Commits). Contributors are listed in [CONTRIBUTORS](CONTRIBUTORS).
 
 ## License
 
