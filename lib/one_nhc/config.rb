@@ -9,6 +9,8 @@ module OneNHC
   class Config
     DEFAULTS = {
       "proc_mounts" => "/proc/mounts",
+      "node_name" => nil,
+      "groups" => {},
       "checks" => {
         "fs-ro" => {
           "enabled" => true,
@@ -71,6 +73,29 @@ module OneNHC
 
     def check(id)
       (@hash["checks"] || {})[id.to_s] || {}
+    end
+
+    # Validates every hosts/exclude expression and every group definition.
+    # Raises ArgumentError with a clear message on unknown groups, cycles,
+    # unbalanced brackets or invalid ranges.
+    def validate!
+      groups = @hash["groups"] || {}
+      checks = @hash["checks"] || {}
+
+      checks.each do |_id, options|
+        %w[hosts exclude].each do |key|
+          expression = options[key]
+          next if expression.nil? || expression.to_s.strip.empty?
+
+          Hostlist.expand(expression, groups: groups)
+        end
+      end
+
+      groups.each_key do |name|
+        Hostlist.expand(groups[name], groups: groups, seen: [name])
+      end
+
+      true
     end
 
     def to_h

@@ -30,16 +30,18 @@ def usage
 
     Options:
       -c, --config FILE   config file (default: #{DEFAULT_CONFIG})
+      -n, --node NAME     evaluate targeting as if running on NAME
       -j, --json          JSON output (check)
       -o, --only IDS      comma separated check ids to run
       -h, --help          show this help
   USAGE
 end
 
-options = { config: DEFAULT_CONFIG, json: false, only: nil }
+options = { config: DEFAULT_CONFIG, json: false, only: nil, node: nil }
 
 parser = OptionParser.new do |opts|
   opts.on("-c", "--config FILE") { |value| options[:config] = value }
+  opts.on("-n", "--node NAME") { |value| options[:node] = value }
   opts.on("-j", "--json") { options[:json] = true }
   opts.on("-o", "--only IDS") { |value| options[:only] = value.split(",").map(&:strip) }
   opts.on("-h", "--help") { puts usage; exit 0 }
@@ -49,30 +51,54 @@ parser.parse!(ARGV)
 command = ARGV.shift
 OneNHC.load_checks
 
-case command
-when "check"
-  config  = OneNHC::Config.load(options[:config])
-  results = OneNHC::Runner.new(config, only: options[:only]).results
-  output  = if options[:json]
-              OneNHC::Adapters::Json.render(results)
-            else
-              OneNHC::Adapters::Human.render(results)
-            end
-  print output
-  exit OneNHC::Runner.exit_code(results)
-when "probe"
-  config  = OneNHC::Config.load(options[:config])
-  results = OneNHC::Runner.new(config, only: options[:only]).results
-  print OneNHC::Adapters::OnMonitor.render(results)
-when "list"
-  OneNHC.checks.each { |check| puts format("%-24s %s", check.id, check.description) }
-when "version", "-V", "--version"
-  puts OneNHC::VERSION
-when nil
-  puts usage
-  exit 1
-else
-  warn "one-nhc: unknown command '#{command}'"
-  puts usage
+def build_runner(options)
+  config = OneNHC::Config.load(options[:config])
+  config.validate!
+
+  node = options[:node] || config["node_name"] || OneNHC.node_name
+  [config, OneNHC::Runner.new(config, only: options[:only], node: node)]
+end
+
+begin
+  case command
+  when "check"
+    _config, runner = build_runner(options)
+    results = runner.results
+
+    output = if options[:json]
+               OneNHC::Adapters::Json.render(results)
+             else
+               OneNHC::Adapters::Human.render(results)
+             end
+    print output
+
+    unless options[:json]
+      skipped = runner.not_targeted
+      puts "not targeted on #{runner.node}: #{skipped.map(&:id).join(', ')}" unless skipped.empty?
+    end
+
+    exit OneNHC::Runner.exit_code(results)
+  when "probe"
+    _config, runner = build_runner(options)
+    print OneNHC::Adapters::OnMonitor.render(runner.results)
+  when "list"
+    OneNHC.checks.each { |check| puts format("%-24s %s", check.id, check.description) }
+  when "version", "-V", "--version"
+    puts OneNHC::VERSION
+  when nil
+    puts usage
+    exit 1
+  else
+    warn "one-nhc: unknown command '#{command}'"
+    puts usage
+    exit 1
+  end
+rescue ArgumentError => e
+  if command == "probe"
+    puts OneNHC::Adapters::OnMonitor.kv("NHC_STATUS", "UNKNOWN")
+    puts OneNHC::Adapters::OnMonitor.kv("NHC_ERROR", e.message)
+  else
+    warn "one-nhc: #{e.message}"
+  end
   exit 1
 end

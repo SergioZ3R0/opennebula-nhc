@@ -29,6 +29,24 @@ module OneNHC
       config.check(id).fetch("enabled", true)
     end
 
+    # True when this check applies to the given node, according to hosts/exclude
+    # in the configuration (clush/dsh-style hostlists).
+    def targets_host?(config, node)
+      options = config.check(id)
+      groups  = config["groups"] || {}
+
+      exclude = options["exclude"]
+      if exclude && !exclude.to_s.strip.empty?
+        return false if OneNHC::Hostlist.match?(exclude, node, groups: groups)
+      end
+
+      hosts = options["hosts"]
+      hosts = Array(hosts).join(",") if hosts.is_a?(Array)
+      return true if hosts.nil? || hosts.to_s.strip.empty?
+
+      OneNHC::Hostlist.match?(hosts, node, groups: groups)
+    end
+
     def call(config)
       ctx = Context.new(self, config)
       Timeout.timeout(timeout) { catch(:done) { @block.call(ctx) } }

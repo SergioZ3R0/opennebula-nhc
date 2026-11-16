@@ -5,18 +5,31 @@
 module OneNHC
   # Runs the registered checks against a configuration.
   class Runner
-    def initialize(config, only: nil)
+    attr_reader :config, :node
+
+    def initialize(config, only: nil, node: nil)
       @config = config
       @only   = only && Array(only).map(&:to_s)
+      @node   = node || OneNHC.node_name
     end
 
     def results
       selected.map { |check| check.call(@config) }
     end
 
+    # Checks enabled and targeted at this node.
     def selected
       OneNHC.checks.select do |check|
-        check.enabled?(@config) && (@only.nil? || @only.include?(check.id))
+        check.enabled?(@config) && targeted?(check) &&
+          (@only.nil? || @only.include?(check.id))
+      end
+    end
+
+    # Checks enabled but intentionally not run on this node.
+    def not_targeted
+      OneNHC.checks.select do |check|
+        check.enabled?(@config) && !targeted?(check) &&
+          (@only.nil? || @only.include?(check.id))
       end
     end
 
@@ -39,6 +52,15 @@ module OneNHC
       when :unknown then 3
       else 0
       end
+    end
+
+    private
+
+    def targeted?(check)
+      check.targets_host?(@config, @node)
+    rescue ArgumentError => e
+      warn "one-nhc: #{check.id}: #{e.message}"
+      false
     end
   end
 end

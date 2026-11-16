@@ -25,6 +25,9 @@ not follow them will be asked to change before it is merged.
    pass.
 8. **Conventional Commits.** Commit messages follow Conventional Commits and
    branches are named `type/kebab-case`.
+9. **Targeting.** A check that does not apply to every host must declare
+   `hosts:` (and optionally `exclude:`). A check that is not targeted must not
+   run and must not be reported as `SKIP`.
 
 ## Code style (Ruby)
 
@@ -70,9 +73,11 @@ end
 
 3. Read settings from `ctx.config.check("raid")`.
 4. Add an example to `etc/one-nhc.conf` and document it in the README table.
-5. Add tests in `tests/test_<id>.rb`, using fixtures or stubbing
+5. If the check does not apply to every host, set `hosts:` (and optionally
+   `exclude:`) in the config and document it in the README.
+6. Add tests in `tests/test_<id>.rb`, using fixtures or stubbing
    `OneNHC::Shell`.
-6. Run `make test` and `./scripts/check-style.sh`.
+7. Run `make test` and `./scripts/check-style.sh`.
 
 ## Tests
 
@@ -91,6 +96,7 @@ end
   - [ ] `make test` passes
   - [ ] `./scripts/check-style.sh` passes
   - [ ] new checks are documented and tested
+  - [ ] targeting (`hosts`/`exclude`) set where the check is not global
   - [ ] no runtime gems introduced
   - [ ] SPDX headers present
 

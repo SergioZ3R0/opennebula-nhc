@@ -59,6 +59,24 @@ Rules:
 - `UNKNOWN` means "could not determine" (timeout or unexpected error).
 - Checks must be read-only and must not hang: every check has a timeout.
 
+## Targeting
+
+Every check can be scoped to hosts with clush/dsh-style hostlists:
+
+```yaml
+groups:
+  gpu: "gpu[01-02]"
+checks:
+  infiniband:
+    hosts: "@gpu"
+    exclude: "gpu02"
+```
+
+The probe evaluates the expression against the local node name (the short
+hostname, `node_name` in the config, or the `ONE_NHC_NODE` environment
+variable). A check that is not targeted is not executed and not reported, so
+monitoring does not fill with `SKIP` for checks that do not apply.
+
 ## Status mapping
 
 | one-nhc | IM attribute |

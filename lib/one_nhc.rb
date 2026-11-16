@@ -8,9 +8,12 @@ require_relative "one_nhc/check"
 require_relative "one_nhc/config"
 require_relative "one_nhc/runner"
 require_relative "one_nhc/shell"
+require_relative "one_nhc/hostlist"
 require_relative "one_nhc/adapters/human"
 require_relative "one_nhc/adapters/on_monitor"
 require_relative "one_nhc/adapters/json"
+
+require "socket"
 
 # NHC-style health checks for OpenNebula.
 module OneNHC
@@ -21,6 +24,11 @@ module OneNHC
 
     def check(**metadata, &block)
       checks << Check.new(**metadata, &block)
+    end
+
+    # Local node name used to evaluate check targeting.
+    def node_name
+      ENV["ONE_NHC_NODE"] || Socket.gethostname.split(".").first
     end
 
     # Loads every check definition from a directory.

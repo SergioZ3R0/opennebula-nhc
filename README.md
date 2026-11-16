@@ -101,6 +101,48 @@ checks:
     timeout: 6
 ```
 
+## Targeting checks to hosts and groups
+
+By default every enabled check runs on every host. Scope a check with
+clush/dsh-style hostlists:
+
+```yaml
+groups:
+  compute: "node[01-10]"
+  gpu: "gpu[01-02]"
+
+checks:
+  fs-ro:
+    enabled: true
+    hosts: all
+  infiniband:
+    enabled: true
+    hosts: "@gpu"
+  datastore-mounts:
+    enabled: true
+    hosts: "@compute,stor[01,03]"
+    exclude: "node05"
+```
+
+| Expression | Matches |
+|---|---|
+| `all` or `*` | every host |
+| `node01` | that host |
+| `node[01-10]` | node01 to node10 (zero padding preserved) |
+| `node[01,08]` | node01 and node08 |
+| `node[01-03,08,10-12]` | ranges and single values |
+| `node*` | glob (`File.fnmatch`) |
+| `@group` | expansion of `groups.<group>` |
+
+A check that is not targeted at the local host is **not executed and not
+reported**, so monitoring does not fill with `SKIP` for checks that do not
+apply. Use `one-nhc check --node node05` to evaluate another host and
+`one-nhc list` to list the available checks.
+
+The local node name is the short hostname by default. Override it with
+`node_name:` in the config or the `ONE_NHC_NODE` environment variable when the
+OpenNebula host name differs from the OS hostname.
+
 ## Simulating failures
 
 ```bash
