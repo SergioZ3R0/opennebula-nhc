@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: 2026 SergioZ3R0
+# SPDX-License-Identifier: Apache-2.0
+---
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+
+      - name: Ruby syntax
+        run: find . -name '*.rb' -print0 | xargs -0 -n1 ruby -c
+
+      - name: SPDX headers
+        run: ./scripts/check-spdx.sh
+
+      - name: Tests
+        run: ruby -Ilib -Itests tests/run.rb
+
+      - name: REUSE lint (informational)
+        continue-on-error: true
+        run: |
+          python3 -m pip install --user reuse
+          ~/.local/bin/reuse lint

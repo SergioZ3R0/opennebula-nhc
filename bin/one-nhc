@@ -1,0 +1,78 @@
+#!/usr/bin/env ruby
+# SPDX-FileCopyrightText: 2026 SergioZ3R0
+# SPDX-License-Identifier: Apache-2.0
+# frozen_string_literal: true
+
+# Locate the library both when running from a checkout and when installed.
+[
+  ENV["ONE_NHC_LIB"],
+  File.expand_path("../lib", __dir__),
+  "/usr/local/lib/one-nhc/lib",
+  "/usr/lib/one-nhc/lib"
+].compact.each do |candidate|
+  $LOAD_PATH.unshift(candidate) if File.file?(File.join(candidate, "one_nhc.rb"))
+end
+
+require "one_nhc"
+require "optparse"
+
+DEFAULT_CONFIG = "/etc/one-nhc/one-nhc.conf"
+
+def usage
+  <<~USAGE
+    one-nhc #{OneNHC::VERSION} - NHC-style health checks for OpenNebula
+
+    Usage:
+      one-nhc check  [options]   run checks and print a human report
+      one-nhc probe  [options]   run checks and print OpenNebula IM attributes
+      one-nhc list               list available checks
+      one-nhc version            print version
+
+    Options:
+      -c, --config FILE   config file (default: #{DEFAULT_CONFIG})
+      -j, --json          JSON output (check)
+      -o, --only IDS      comma separated check ids to run
+      -h, --help          show this help
+  USAGE
+end
+
+options = { config: DEFAULT_CONFIG, json: false, only: nil }
+
+parser = OptionParser.new do |opts|
+  opts.on("-c", "--config FILE") { |value| options[:config] = value }
+  opts.on("-j", "--json") { options[:json] = true }
+  opts.on("-o", "--only IDS") { |value| options[:only] = value.split(",").map(&:strip) }
+  opts.on("-h", "--help") { puts usage; exit 0 }
+end
+parser.parse!(ARGV)
+
+command = ARGV.shift
+OneNHC.load_checks
+
+case command
+when "check"
+  config  = OneNHC::Config.load(options[:config])
+  results = OneNHC::Runner.new(config, only: options[:only]).results
+  output  = if options[:json]
+              OneNHC::Adapters::Json.render(results)
+            else
+              OneNHC::Adapters::Human.render(results)
+            end
+  print output
+  exit OneNHC::Runner.exit_code(results)
+when "probe"
+  config  = OneNHC::Config.load(options[:config])
+  results = OneNHC::Runner.new(config, only: options[:only]).results
+  print OneNHC::Adapters::OnMonitor.render(results)
+when "list"
+  OneNHC.checks.each { |check| puts format("%-24s %s", check.id, check.description) }
+when "version", "-V", "--version"
+  puts OneNHC::VERSION
+when nil
+  puts usage
+  exit 1
+else
+  warn "one-nhc: unknown command '#{command}'"
+  puts usage
+  exit 1
+end
