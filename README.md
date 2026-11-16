@@ -135,6 +135,10 @@ cooldowns, `--dry-run` and must never disable the last healthy host.
 make test   # ruby -Ilib -Itests tests/run.rb
 ```
 
+## Contributors
+
+See [CONTRIBUTORS](CONTRIBUTORS).
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
