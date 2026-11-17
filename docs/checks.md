@@ -250,6 +250,27 @@ expected; operational errors still appear in the journal.
 Do not run the cache timer on the frontend unless the frontend is also a
 hypervisor. The controller timer is a frontend unit.
 
+## Simulation and tests
+
+There are two layers:
+
+1. **Unit tests** (`tests/test_*.rb`) stub `OneNHC::Shell` or use temporary
+   sysfs/procfs fixtures. They are fast and do not need hardware.
+2. **Integration simulator** (`tests/test_integration_checks.rb`) runs the real
+   `one-nhc` binary as a subprocess with:
+   - a fake `PATH` containing `df`, `smartctl`, `nvidia-smi`, `systemctl`,
+     `pgrep`, `virsh` and `rpm`,
+   - fake sysfs trees for network, InfiniBand and md,
+   - a fake `mdstat` and `proc_mounts`.
+
+   It asserts that **every check reports `OK`** in the healthy simulation,
+   that **each check can report `CRIT`** when its condition is broken, and that
+   the heavy cache path works (`cache` → `probe` → `OK`; missing cache →
+   `UNKNOWN`; fast `gpu` count still `OK` without cache).
+
+`make test` runs both. When you add a check, extend the simulator with its
+healthy and failing cases if it depends on sysfs or external commands.
+
 ## Troubleshooting
 
 ### A heavy check is UNKNOWN in `onehost show`

@@ -113,6 +113,9 @@ the cache timer interval; see `systemd/one-nhc-cache.timer`.
   (`UNKNOWN`, never `CRIT`) and the direct `one-nhc check` path. See
   `tests/test_cache.rb`, `tests/test_runner_cache.rb` and
   `tests/test_smart.rb`.
+- The integration simulator `tests/test_integration_checks.rb` runs the real CLI
+  with fake commands and sysfs. Add the healthy and failing cases for a new
+  check there when it uses external commands or sysfs.
 
 ## Commits and pull requests
 
