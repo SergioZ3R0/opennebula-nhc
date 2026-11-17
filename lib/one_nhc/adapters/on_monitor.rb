@@ -13,13 +13,14 @@ module OneNHC
 
       module_function
 
-      def render(results)
+      def render(results, now: Time.now)
         counts = Hash.new(0)
         results.each { |result| counts[result.status] += 1 }
 
         lines = []
         lines << kv("NHC_STATUS", Runner.worst(results).to_s.upcase)
         lines << kv("NHC_CHECK_COUNT", results.size)
+        lines << kv("NHC_TIMESTAMP", now.to_i)
 
         %i[ok warn crit skip unknown].each do |status|
           lines << kv("NHC_#{status.to_s.upcase}", counts[status])

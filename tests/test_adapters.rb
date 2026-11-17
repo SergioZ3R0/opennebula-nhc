@@ -25,6 +25,14 @@ class TestAdapters < Minitest::Test
     assert_includes output, 'NHC_CHECK_COUNT="2"'
   end
 
+  def test_on_monitor_includes_sample_timestamp
+    output = OneNHC::Adapters::OnMonitor.render(
+      results, now: Time.at(1_700_000_000)
+    )
+
+    assert_includes output, 'NHC_TIMESTAMP="1700000000"'
+  end
+
   def test_on_monitor_sanitizes_messages
     output = OneNHC::Adapters::OnMonitor.render(results)
     line   = output.lines.find { |l| l.start_with?("NHC_DATASTORE_MOUNTS_MSG=") }

@@ -19,20 +19,22 @@ the classic HPC Node Health Check (NHC) and designed to plug into OpenNebula:
 - **Probe (host)** runs the checks and emits `NHC_*` attributes that the
   Information Manager merges into the host `MONITORING INFORMATION`.
 - **CLI** gives human and JSON output for manual checks and automation.
-- **Controller (roadmap)** applies hysteresis on the frontend and quarantines
-  unhealthy hosts with `onehost disable/enable`.
+- **Controller (frontend)** applies hysteresis on the frontend and, depending on
+  the configured mode, notifies or quarantines unhealthy hosts with
+  `onehost disable/enable`.
 
 ## Architecture
 
 ```text
  host hypervisor                         frontend (oned)
 +-----------------------------+        +------------------------------+
-| one-nhc probe               |        | one-nhc controller (M2)      |
+| one-nhc probe               |        | one-nhc controller           |
 |  checks.d/*.rb              |  MON   |  reads NHC_STATUS from       |
-|  -> NHC_STATUS="..."        | -----> |  onehost show, hysteresis,   |
-|  (kvm-probes.d/host/system)        |        |  onehost disable/enable      |
+|  -> NHC_STATUS="..."        | -----> |  TEMPLATE, hysteresis,       |
+|  (kvm-probes.d/host/system) |        |  cooldown, notify/disable    |
 +-----------------------------+        +------------------------------+
 ```
+
 
 The probe must be fast because it runs on every monitoring cycle. Slow checks
 (RAID scrub, SMART, NFS write test) are planned to run from a timer and be
@@ -75,6 +77,23 @@ onehost show <host-id> | grep NHC_
 The wrapper lives in `kvm-probes.d/host/system`, so attributes refresh on the
 `SYSTEM_HOST` cycle (600s by default). Lower it in `/etc/one/monitord.conf`
 (for example `SYSTEM_HOST = 120`) if you need faster health checks.
+
+### Controller (frontend, optional)
+
+The controller only runs on the frontend and uses the OpenNebula Ruby
+bindings. It starts in `monitor` mode, so it is safe to install and observe
+before you let it notify or act.
+
+```bash
+# On the frontend:
+sudo make install-systemd
+sudo systemctl daemon-reload
+sudo systemctl enable --now one-nhc-controller.timer
+journalctl -u one-nhc-controller.service -f
+```
+
+The timer runs `one-nhc controller --once` every two minutes. For a foreground
+loop instead, run `one-nhc controller --watch`.
 
 ## Checks
 
@@ -154,6 +173,94 @@ The local node name is the short hostname by default. Override it with
 `node_name:` in the config or the `ONE_NHC_NODE` environment variable when the
 OpenNebula host name differs from the OS hostname.
 
+## Controller
+
+The controller reads `TEMPLATE/NHC_STATUS` for every host and decides what to
+do. The mode is the main safety switch:
+
+| Mode | Logs | Notifies | `onehost disable/enable` |
+|---|---|---|---|
+| `monitor` | yes | no | no |
+| `notify` | yes | yes | no |
+| `act` | yes | yes | yes (unless `dry_run`) |
+
+`dry_run: true` keeps `act` mode but only logs the decision.
+
+```yaml
+controller:
+  mode: act          # monitor | notify | act
+  dry_run: false
+  consecutive_crit: 3
+  consecutive_ok: 2
+  cooldown: 300
+  reenable_after: 0
+  monitor_grace: 900
+  never_disable_last: true
+  include_hosts: all
+  # exclude_hosts: "stor[01-02]"
+  interval: 60
+  state_file: /var/lib/one-nhc/state.json
+  notify:
+    # command: /usr/local/bin/nhc-alert
+    # webhook: https://hooks.example.com/services/XXX
+```
+
+Safety rules:
+
+- **Hysteresis:** a host is quarantined after `consecutive_crit` consecutive
+  `CRIT` samples and re-enabled after `consecutive_ok` consecutive `OK`
+  samples. Samples are identified by `NHC_TIMESTAMP`, so running the controller
+  more often than the probe does not speed up (or fake) the counter.
+- **Cooldown:** at least `cooldown` seconds between actions on the same host.
+- **Last host:** it refuses to disable a host when no other healthy monitored
+  host remains (`never_disable_last: true`).
+- **One announcement per episode:** a decision is logged/notified once; a
+  recovery resets the episode.
+- **External changes:** if an operator enables a host outside one-nhc, the
+  controller notices and clears its own state.
+- **Stale monitoring:** a disabled host is not monitored, so its `NHC_STATUS`
+  does not change. `reenable_after` (opt-in, 0 = never) enables it again after
+  that delay as a trial, and `monitor_grace` ignores the stale `CRIT` value
+  for a while so the probe can report again.
+- **Targeting:** only hosts in `include_hosts` (minus `exclude_hosts`) are ever
+  touched; the same clush/dsh-style hostlists as the checks are supported.
+
+`SKIP`, `WARN` and `UNKNOWN` never quarantine a host. Only `CRIT` starts the
+hysteresis counter.
+
+The state file is JSON and tracks counters, cooldown, whether the host was
+disabled by one-nhc and the last announced action. It is written atomically.
+
+Each probe run also emits `NHC_TIMESTAMP`; the controller uses it to count
+distinct samples. Probes without that attribute (older installations) are
+evaluated on every controller cycle.
+
+### Notifications
+
+In `notify` and `act` modes the controller can run a command and/or POST a
+webhook for each decision (including `refuse_disable`).
+
+The command receives:
+
+| Variable | Meaning |
+|---|---|
+| `NHC_MESSAGE` | one-line decision message |
+| `NHC_HOST` | host name |
+| `NHC_HOST_ID` | OpenNebula host id |
+| `NHC_STATUS` | `NHC_STATUS` value (`CRIT`, `OK`, …) |
+| `NHC_ACTION` | `disable`, `enable`, `reenable` or `refuse_disable` |
+| `NHC_APPLIED` | `true` when the action was applied |
+
+The webhook receives a JSON object with the same fields (`message`, `host`,
+`host_id`, `status`, `action`, `applied`). Failures are logged and never abort
+the controller cycle.
+
+```bash
+one-nhc controller --once --mode notify
+one-nhc controller --once --mode act --dry-run
+one-nhc controller --once --json
+```
+
 ## Simulating failures
 
 ```bash
@@ -172,14 +279,18 @@ EOF
 ## Safety
 
 The probe is read-only: it never modifies the host. Any action (quarantine,
-evacuation) belongs to the controller, which must implement hysteresis,
-cooldowns, `--dry-run` and must never disable the last healthy host.
+evacuation) belongs to the controller. The controller implements hysteresis, a
+cooldown, `--dry-run`, host targeting and refuses to disable the last healthy
+host; it only changes hosts in `act` mode. Start in `monitor`, move to `notify`
+and only then to `act` with `dry_run: true` before enabling real actions.
 
 ## Roadmap
 
-- **M1 (this):** probe framework, 3 checks, human/JSON/IM adapters.
-- **M2:** frontend controller with hysteresis and `onehost disable/enable`.
-- **M3:** hooks, notifications and optional evacuation.
+- **M1 (done):** probe framework, 3 checks, human/JSON/IM adapters.
+- **M2 (done):** frontend controller with hysteresis, notifications and
+  `onehost disable/enable`.
+- **M3:** cached heavyweight checks (RAID, SMART, InfiniBand), hooks and
+  optional evacuation.
 - **M4:** docs/blog and an upstream docs PR.
 
 ## Development

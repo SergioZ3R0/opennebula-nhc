@@ -15,6 +15,7 @@
 
 ```text
 NHC_STATUS="CRIT"
+NHC_TIMESTAMP="1794909479"
 NHC_CHECK_COUNT="3"
 NHC_DATASTORE_MOUNTS="CRIT"
 NHC_DATASTORE_MOUNTS_MSG="/var/lib/one/datastores missing"
@@ -32,12 +33,34 @@ will read their cached result.
 `one-nhc check` prints the human report. `--json` is meant for automation,
 `--only` selects checks and `-c` picks a configuration file.
 
-### Controller (M2, frontend)
+### Controller (frontend)
 
-Reads `MONITORING/NHC_STATUS` for every host through the official Ruby bindings
-(`OpenNebula::Client`, `HostPool`), applies hysteresis (N consecutive `CRIT`)
-and a cooldown, then calls `onehost disable` / `onehost enable`. It must refuse
-to disable the last healthy host.
+`one-nhc controller` runs on the OpenNebula frontend and is the only component
+that loads the official Ruby bindings. It reads `TEMPLATE/NHC_STATUS` for every
+host through `OpenNebula::Client` and `HostPool`, applies hysteresis and a
+cooldown, and then:
+
+| Mode | Effect |
+|---|---|
+| `monitor` | log only (default) |
+| `notify` | log and notify (command and/or webhook) |
+| `act` | notify and `onehost disable/enable` (unless `dry_run`) |
+
+Safety: only `CRIT` starts the counter (`SKIP`, `WARN` and `UNKNOWN` never
+quarantine), counters advance once per distinct `NHC_TIMESTAMP` sample (not per
+controller cycle), decisions are announced once per episode, and the controller
+refuses to disable the last healthy monitored host. It also tracks whether it
+disabled each host, so an operator enabling a host outside one-nhc resets the
+state instead of fighting the operator.
+
+A disabled host is not monitored, so its monitoring attributes do not change.
+`reenable_after` optionally enables it again after a delay as a trial, and
+`monitor_grace` ignores the stale `CRIT` value until the probe has had time to
+report fresh data.
+
+State lives in `/var/lib/one-nhc/state.json` and is written atomically. The
+systemd timer runs `--once` every two minutes; `--watch` runs the same loop in
+the foreground.
 
 ## Check contract
 

@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 SergioZ3R0
+# SPDX-License-Identifier: Apache-2.0
+
+[Unit]
+Description=one-nhc controller (OpenNebula host health)
+Documentation=https://github.com/SergioZ3R0/opennebula-nhc
+Wants=network-online.target
+After=network-online.target opennebula.service
+
+[Service]
+Type=oneshot
+User=oneadmin
+Group=oneadmin
+StateDirectory=one-nhc
+StateDirectoryMode=0750
+ExecStart=/usr/local/bin/one-nhc controller --once
+Nice=5

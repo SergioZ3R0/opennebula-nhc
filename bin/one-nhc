@@ -14,36 +14,62 @@
 end
 
 require "one_nhc"
+require "json"
 require "optparse"
 
 DEFAULT_CONFIG = "/etc/one-nhc/one-nhc.conf"
+DEFAULT_STATE  = "/var/lib/one-nhc/state.json"
 
 def usage
   <<~USAGE
     one-nhc #{OneNHC::VERSION} - NHC-style health checks for OpenNebula
 
     Usage:
-      one-nhc check  [options]   run checks and print a human report
-      one-nhc probe  [options]   run checks and print OpenNebula IM attributes
-      one-nhc list               list available checks
-      one-nhc version            print version
+      one-nhc check       [options]   run checks and print a human report
+      one-nhc probe       [options]   run checks and print OpenNebula IM attributes
+      one-nhc controller  [options]   evaluate hosts and apply the configured mode
+      one-nhc list                    list available checks
+      one-nhc version                 print version
 
     Options:
-      -c, --config FILE   config file (default: #{DEFAULT_CONFIG})
-      -n, --node NAME     evaluate targeting as if running on NAME
-      -j, --json          JSON output (check)
-      -o, --only IDS      comma separated check ids to run
-      -h, --help          show this help
+      -c, --config FILE    config file (default: #{DEFAULT_CONFIG})
+      -n, --node NAME      evaluate targeting as if running on NAME
+      -j, --json           JSON output (check and controller)
+      -o, --only IDS       comma separated check ids to run
+          --once           run the controller once (default)
+          --watch          run the controller in a loop
+          --interval SECS  seconds between controller runs (default: config)
+          --mode MODE      controller mode: monitor, notify or act
+          --dry-run        log controller decisions without changing hosts
+          --state FILE     controller state file (default: #{DEFAULT_STATE})
+      -h, --help           show this help
   USAGE
 end
 
-options = { config: DEFAULT_CONFIG, json: false, only: nil, node: nil }
+options = {
+  config: DEFAULT_CONFIG,
+  json: false,
+  only: nil,
+  node: nil,
+  once: false,
+  watch: false,
+  interval: nil,
+  mode: nil,
+  dry_run: nil,
+  state: nil
+}
 
 parser = OptionParser.new do |opts|
   opts.on("-c", "--config FILE") { |value| options[:config] = value }
   opts.on("-n", "--node NAME") { |value| options[:node] = value }
   opts.on("-j", "--json") { options[:json] = true }
   opts.on("-o", "--only IDS") { |value| options[:only] = value.split(",").map(&:strip) }
+  opts.on("--once") { options[:once] = true }
+  opts.on("--watch") { options[:watch] = true }
+  opts.on("--interval SECONDS", Integer) { |value| options[:interval] = value }
+  opts.on("--mode MODE") { |value| options[:mode] = value }
+  opts.on("--dry-run") { options[:dry_run] = true }
+  opts.on("--state FILE") { |value| options[:state] = value }
   opts.on("-h", "--help") { puts usage; exit 0 }
 end
 parser.parse!(ARGV)
@@ -57,6 +83,64 @@ def build_runner(options)
 
   node = options[:node] || config["node_name"] || OneNHC.node_name
   [config, OneNHC::Runner.new(config, only: options[:only], node: node)]
+end
+
+def build_controller(config, options)
+  raise ArgumentError, "--once and --watch are mutually exclusive" if options[:once] && options[:watch]
+
+  mode = options[:mode]
+  if mode && !OneNHC::Controller::MODES.include?(mode)
+    raise ArgumentError,
+          "invalid controller mode '#{mode}' (use #{OneNHC::Controller::MODES.join(', ')})"
+  end
+
+  require "one_nhc/on_api"
+
+  state_file = options[:state] || config.dig("controller", "state_file") || DEFAULT_STATE
+  state_file = DEFAULT_STATE if state_file.to_s.strip.empty?
+
+  OneNHC::Controller.new(
+    config,
+    api: OneNHC::OnAPI.new,
+    state: OneNHC::State.new(state_file),
+    notifier: OneNHC::Notifier.new(config),
+    mode: mode,
+    dry_run: options[:dry_run],
+    logger: options[:json] ? ->(_message) {} : nil
+  )
+end
+
+def controller_payload(decisions)
+  decisions.map do |decision|
+    {
+      "host" => decision.host.name,
+      "host_id" => decision.host.id,
+      "status" => decision.host.status,
+      "action" => decision.action.to_s,
+      "applied" => decision.applied,
+      "reason" => decision.reason
+    }
+  end
+end
+
+def run_controller_once(controller, json, quiet: false)
+  decisions = controller.run
+
+  if json
+    puts JSON.generate(controller_payload(decisions))
+  elsif decisions.empty? && !quiet
+    puts "[one-nhc] no action needed"
+  end
+end
+
+def run_controller_watch(controller, interval, json)
+  stop = false
+  %w[INT TERM].each { |signal| trap(signal) { stop = true } }
+
+  until stop
+    run_controller_once(controller, json, quiet: true)
+    sleep interval
+  end
 end
 
 begin
@@ -81,6 +165,20 @@ begin
   when "probe"
     _config, runner = build_runner(options)
     print OneNHC::Adapters::OnMonitor.render(runner.probe_results)
+  when "controller"
+    config     = OneNHC::Config.load(options[:config])
+    config.validate!
+    controller = build_controller(config, options)
+
+    interval = options[:interval] || config.dig("controller", "interval") || 60
+    interval = Integer(interval)
+    raise ArgumentError, "controller interval must be >= 1" if interval < 1
+
+    if options[:watch]
+      run_controller_watch(controller, interval, options[:json])
+    else
+      run_controller_once(controller, options[:json])
+    end
   when "list"
     OneNHC.checks.each { |check| puts format("%-24s %s", check.id, check.description) }
   when "version", "-V", "--version"
@@ -100,5 +198,13 @@ rescue ArgumentError => e
   else
     warn "one-nhc: #{e.message}"
   end
+  exit 1
+rescue LoadError => e
+  warn "one-nhc: the controller needs the OpenNebula Ruby bindings: #{e.message}"
+  exit 1
+rescue StandardError => e
+  raise unless command == "controller"
+
+  warn "one-nhc: controller failed: #{e.class}: #{e.message}"
   exit 1
 end

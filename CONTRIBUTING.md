@@ -28,6 +28,9 @@ not follow them will be asked to change before it is merged.
 9. **Targeting.** A check that does not apply to every host must declare
    `hosts:` (and optionally `exclude:`). A check that is not targeted must not
    run and must not be reported as `SKIP`.
+10. **Controller safety.** Actions live in the controller and only run in `act`
+    mode. Keep hysteresis, cooldown, `dry_run`, host targeting and the
+    "never disable the last healthy host" safeguard.
 
 ## Code style (Ruby)
 

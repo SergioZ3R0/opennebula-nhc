@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 SergioZ3R0
+# SPDX-License-Identifier: Apache-2.0
+
+[Unit]
+Description=Run the one-nhc controller periodically
+Documentation=https://github.com/SergioZ3R0/opennebula-nhc
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=30s
+RandomizedDelaySec=10s
+Unit=one-nhc-controller.service
+
+[Install]
+WantedBy=timers.target
