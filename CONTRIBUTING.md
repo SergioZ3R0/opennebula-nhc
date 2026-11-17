@@ -31,6 +31,9 @@ not follow them will be asked to change before it is merged.
 10. **Controller safety.** Actions live in the controller and only run in `act`
     mode. Keep hysteresis, cooldown, `dry_run`, host targeting, the
     `min_healthy_hosts` safeguard and the single-controller lock.
+11. **Secrets stay out of the YAML.** SMTP passwords and webhook tokens use
+    `password_file`/`password_env` (or an equivalent secret store); never commit
+    credentials.
 
 ## Code style (Ruby)
 

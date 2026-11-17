@@ -29,7 +29,8 @@ module OneNHC
         "state_file" => "/var/lib/one-nhc/state.json",
         "notify" => {
           "command" => nil,
-          "webhook" => nil
+          "webhook" => nil,
+          "email" => nil
         }
       },
       "checks" => {
@@ -195,6 +196,71 @@ module OneNHC
             raise ArgumentError, "controller.notify.webhook is not a valid URL"
           end
         end
+      end
+
+      validate_email!(notify["email"]) unless notify["email"].nil?
+    end
+
+    def validate_email!(email)
+      raise ArgumentError, "controller.notify.email must be a mapping" unless email.is_a?(Hash)
+
+      recipients = email["to"]
+      recipients = [recipients] unless recipients.is_a?(Array)
+      recipients = recipients.compact.map(&:to_s).reject(&:empty?)
+      raise ArgumentError, "controller.notify.email.to is required" if recipients.empty?
+
+      recipients.each do |address|
+        unless address.include?("@")
+          raise ArgumentError,
+                "controller.notify.email.to has an invalid address: '#{address}'"
+        end
+      end
+
+      %w[from host].each do |key|
+        value = email[key].to_s.strip
+        raise ArgumentError, "controller.notify.email.#{key} is required" if value.empty?
+      end
+
+      unless email["from"].to_s.include?("@")
+        raise ArgumentError, "controller.notify.email.from has an invalid address"
+      end
+
+      port = email["port"]
+      unless port.nil?
+        value = positive_integer("notify.email.port", port)
+        unless (1..65_535).cover?(value)
+          raise ArgumentError, "controller.notify.email.port must be between 1 and 65535"
+        end
+      end
+
+      tls = (email["tls"] || "starttls").to_s
+      unless %w[starttls ssl none].include?(tls)
+        raise ArgumentError, "controller.notify.email.tls must be one of starttls, ssl, none"
+      end
+
+      timeout = email["timeout"]
+      unless timeout.nil?
+        value = positive_integer("notify.email.timeout", timeout)
+        raise ArgumentError, "controller.notify.email.timeout must be >= 1" if value < 1
+      end
+
+      user = email["user"].to_s.strip
+      env  = email["password_env"].to_s.strip
+      file = email["password_file"].to_s.strip
+
+      if !env.empty? && !file.empty?
+        raise ArgumentError,
+              "controller.notify.email.password_env and password_file are mutually exclusive"
+      end
+
+      if !user.empty? && env.empty? && file.empty?
+        raise ArgumentError,
+              "controller.notify.email.user requires password_env or password_file"
+      end
+
+      if user.empty? && (!env.empty? || !file.empty?)
+        raise ArgumentError,
+              "controller.notify.email password source requires email.user"
       end
     end
 

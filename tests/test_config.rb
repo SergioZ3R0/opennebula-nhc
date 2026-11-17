@@ -116,4 +116,89 @@ class TestConfig < Minitest::Test
     end
     assert_includes error.message, "webhook"
   end
+
+  def email(overrides = {})
+    {
+      "to" => "ops@example.com",
+      "from" => "one-nhc@example.com",
+      "host" => "smtp.example.com",
+      "user" => "one-nhc@example.com",
+      "password_env" => "NHC_SMTP_PASSWORD"
+    }.merge(overrides)
+  end
+
+  def email_config(overrides = {})
+    config("notify" => { "email" => email(overrides) })
+  end
+
+  def test_accepts_email_config
+    assert email_config.validate!
+  end
+
+  def test_accepts_email_recipient_list
+    assert email_config("to" => %w[ops@example.com oncall@example.com]).validate!
+  end
+
+  def test_accepts_email_password_file
+    assert email_config(
+      "password_env" => nil,
+      "password_file" => "/etc/one-nhc/smtp.password"
+    ).validate!
+  end
+
+  def test_rejects_email_not_a_mapping
+    error = assert_raises(ArgumentError) do
+      config("notify" => { "email" => "ops@example.com" }).validate!
+    end
+    assert_includes error.message, "must be a mapping"
+  end
+
+  def test_rejects_email_without_to
+    error = assert_raises(ArgumentError) { email_config("to" => nil).validate! }
+    assert_includes error.message, "email.to"
+  end
+
+  def test_rejects_invalid_email_recipient
+    error = assert_raises(ArgumentError) { email_config("to" => "not-an-email").validate! }
+    assert_includes error.message, "invalid address"
+  end
+
+  def test_rejects_email_without_from
+    error = assert_raises(ArgumentError) { email_config("from" => "").validate! }
+    assert_includes error.message, "email.from"
+  end
+
+  def test_rejects_email_without_host
+    error = assert_raises(ArgumentError) { email_config("host" => "").validate! }
+    assert_includes error.message, "email.host"
+  end
+
+  def test_rejects_invalid_email_port
+    error = assert_raises(ArgumentError) { email_config("port" => 70_000).validate! }
+    assert_includes error.message, "email.port"
+  end
+
+  def test_rejects_invalid_email_tls
+    error = assert_raises(ArgumentError) { email_config("tls" => "smtp").validate! }
+    assert_includes error.message, "email.tls"
+  end
+
+  def test_rejects_two_email_password_sources
+    error = assert_raises(ArgumentError) do
+      email_config("password_file" => "/etc/one-nhc/smtp.password").validate!
+    end
+    assert_includes error.message, "mutually exclusive"
+  end
+
+  def test_rejects_email_user_without_password_source
+    error = assert_raises(ArgumentError) do
+      email_config("password_env" => nil).validate!
+    end
+    assert_includes error.message, "password_env"
+  end
+
+  def test_rejects_email_password_without_user
+    error = assert_raises(ArgumentError) { email_config("user" => nil).validate! }
+    assert_includes error.message, "email.user"
+  end
 end

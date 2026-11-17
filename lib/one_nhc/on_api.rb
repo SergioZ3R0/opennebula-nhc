@@ -20,12 +20,16 @@ module OneNHC
 
       list = []
       pool.each do |host|
+        template = host.to_hash.dig("HOST", "TEMPLATE") || {}
+        details  = template.select { |key, _| key.start_with?("NHC_") }
+
         list << HostView.new(
           id: host.id,
           name: host.name,
-          status: normalize(host["TEMPLATE/NHC_STATUS"]),
+          status: normalize(template["NHC_STATUS"]),
           state: host["STATE"].to_i,
-          sample: host["TEMPLATE/NHC_TIMESTAMP"].to_i
+          sample: template["NHC_TIMESTAMP"].to_i,
+          details: details
         )
       end
       list

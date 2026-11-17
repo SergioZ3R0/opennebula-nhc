@@ -28,6 +28,7 @@ def usage
       one-nhc check       [options]   run checks and print a human report
       one-nhc probe       [options]   run checks and print OpenNebula IM attributes
       one-nhc controller  [options]   evaluate hosts and apply the configured mode
+      one-nhc notify-test [options]   send a test email using controller.notify.email
       one-nhc list                    list available checks
       one-nhc version                 print version
 
@@ -42,6 +43,7 @@ def usage
           --mode MODE      controller mode: monitor, notify or act
           --dry-run        log controller decisions without changing hosts
           --state FILE     controller state file (default: #{DEFAULT_STATE})
+          --to EMAIL       override the email recipient (notify-test)
       -q, --quiet          suppress the controller's "no action needed" message
       -h, --help           show this help
   USAGE
@@ -58,7 +60,8 @@ options = {
   mode: nil,
   dry_run: nil,
   state: nil,
-  quiet: false
+  quiet: false,
+  to: nil
 }
 
 parser = OptionParser.new do |opts|
@@ -72,6 +75,7 @@ parser = OptionParser.new do |opts|
   opts.on("--mode MODE") { |value| options[:mode] = value }
   opts.on("--dry-run") { options[:dry_run] = true }
   opts.on("--state FILE") { |value| options[:state] = value }
+  opts.on("--to EMAIL") { |value| options[:to] = value }
   opts.on("-q", "--quiet") { options[:quiet] = true }
   opts.on("-h", "--help") { puts usage; exit 0 }
 end
@@ -148,6 +152,52 @@ def run_controller_watch(controller, interval, json)
   end
 end
 
+def email_test_host
+  OneNHC::HostView.new(
+    id: 0,
+    name: OneNHC.node_name,
+    status: "CRIT",
+    state: OneNHC::Controller::HOST_MONITORED,
+    sample: Time.now.to_i,
+    details: {
+      "NHC_STATUS" => "CRIT",
+      "NHC_CHECK_COUNT" => "3",
+      "NHC_CRIT" => "1",
+      "NHC_WARN" => "0",
+      "NHC_OK" => "2",
+      "NHC_SKIP" => "0",
+      "NHC_UNKNOWN" => "0",
+      "NHC_FS_RO" => "CRIT",
+      "NHC_FS_RO_MSG" => "read-only: /data (ext4)",
+      "NHC_DATASTORE_MOUNTS" => "OK",
+      "NHC_DATASTORE_MOUNTS_MSG" => "1 datastore mount(s) ok",
+      "NHC_LIBVIRT" => "OK",
+      "NHC_LIBVIRT_MSG" => "libvirt ok (0 domain(s))"
+    }
+  )
+end
+
+def run_notify_test(config, options)
+  email_config = config.dig("controller", "notify", "email")
+  raise ArgumentError, "controller.notify.email is not configured" if email_config.nil?
+
+  email_config = email_config.dup
+  email_config["to"] = options[:to] if options[:to]
+
+  email     = OneNHC::EmailNotifier.new(email_config)
+  host      = email_test_host
+  decision  = OneNHC::Controller::Decision.new(
+    host: host,
+    action: :test,
+    reason: "test notification",
+    applied: false
+  )
+  message = "host=#{host.name} id=#{host.id} status=CRIT action=test (test): one-nhc test notification"
+
+  email.deliver(OneNHC::Notifier.payload(message, host, decision))
+  puts "email sent to #{email.to.join(', ')}"
+end
+
 begin
   case command
   when "check"
@@ -199,6 +249,10 @@ begin
     ensure
       lock.release
     end
+  when "notify-test"
+    config = OneNHC::Config.load(options[:config])
+    config.validate!
+    run_notify_test(config, options)
   when "list"
     OneNHC.checks.each { |check| puts format("%-24s %s", check.id, check.description) }
   when "version", "-V", "--version"
@@ -223,8 +277,8 @@ rescue LoadError => e
   warn "one-nhc: the controller needs the OpenNebula Ruby bindings: #{e.message}"
   exit 1
 rescue StandardError => e
-  raise unless command == "controller"
+  raise unless %w[controller notify-test].include?(command)
 
-  warn "one-nhc: controller failed: #{e.class}: #{e.message}"
+  warn "one-nhc: #{command} failed: #{e.class}: #{e.message}"
   exit 1
 end

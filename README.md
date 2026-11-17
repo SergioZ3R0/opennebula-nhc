@@ -256,9 +256,46 @@ The command receives:
 | `NHC_ACTION` | `disable`, `enable`, `reenable` or `refuse_disable` |
 | `NHC_APPLIED` | `true` when the action was applied |
 
-The webhook receives a JSON object with the same fields (`message`, `host`,
-`host_id`, `status`, `action`, `applied`). Failures are logged and never abort
-the controller cycle.
+The webhook receives a JSON object with the same fields plus `time`, `sample`
+and `details` (the host `NHC_*` attributes). Failures are logged and never
+abort the controller cycle.
+
+#### Email
+
+Email notifications send one message per decision with an HTML and plain-text
+body: status colour, host, action, summary counts, a table with every check and
+its message, and the decision message.
+
+```yaml
+controller:
+  notify:
+    email:
+      to: ops@example.com          # string or list
+      from: one-nhc@example.com
+      host: smtp.example.com
+      port: 587
+      user: one-nhc@example.com
+      password_file: /etc/one-nhc/smtp.password
+      tls: starttls                # starttls | ssl | none
+```
+
+Never put the password in the YAML. Use `password_file` (recommended) or
+`password_env` (for a systemd `EnvironmentFile`). The password file must be
+readable only by oneadmin:
+
+```bash
+sudo install -m 600 -o oneadmin -g oneadmin /dev/null /etc/one-nhc/smtp.password
+sudo -u oneadmin sh -c 'read -r -s -p "SMTP password: " p; printf "%s" "$p" > /etc/one-nhc/smtp.password'
+```
+
+For Gmail or Google Workspace use an app password with
+`smtp.gmail.com:587` and STARTTLS; `from` must be the authenticated account.
+Test the configuration without waiting for a host failure:
+
+```bash
+one-nhc notify-test
+one-nhc notify-test --to oncall@example.com
+```
 
 ```bash
 one-nhc controller --once --mode notify

@@ -64,6 +64,12 @@ file next to it keeps a single controller per state, so the systemd timer and a
 manual `--watch` cannot run at the same time. The systemd timer runs `--once
 --quiet` every two minutes; `--watch` runs the same loop in the foreground.
 
+Notifications go to a command, a JSON webhook and/or email. The email body is
+rendered from the host `NHC_*` attributes (summary counts and the failed
+checks) as HTML plus a plain-text alternative. SMTP credentials are read from
+`password_file` or `password_env`, never from the YAML, and `one-nhc
+notify-test` sends a test message without waiting for a host failure.
+
 ## Check contract
 
 Every check is registered with `OneNHC.check` and receives a `Context`:

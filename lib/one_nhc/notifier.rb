@@ -4,32 +4,52 @@
 
 require "json"
 require "net/http"
+require "time"
 require "uri"
 
 module OneNHC
-  # Sends controller decisions to a command and/or a webhook.
+  # Sends controller decisions to a command, a webhook and/or email.
   class Notifier
     def initialize(config)
       notify   = config.dig("controller", "notify") || {}
       @command = notify["command"].to_s
       @webhook = notify["webhook"].to_s
+      @email   = build_email(notify["email"])
     end
 
     def notify(message, host:, decision:)
-      payload = {
+      payload = self.class.payload(message, host, decision)
+
+      run_command(payload) unless @command.empty?
+      post_webhook(payload) unless @webhook.empty?
+      deliver_email(payload)
+    end
+
+    # Payload shared by every notification channel.
+    def self.payload(message, host, decision, now: Time.now)
+      {
         message: message,
         host: host.name,
         host_id: host.id,
         status: host.status,
         action: decision.action.to_s,
-        applied: decision.applied
+        applied: decision.applied,
+        time: now.utc.iso8601,
+        sample: host.respond_to?(:sample) ? host.sample : nil,
+        details: host.respond_to?(:details) ? (host.details || {}) : {}
       }
-
-      run_command(payload) unless @command.empty?
-      post_webhook(payload) unless @webhook.empty?
     end
 
     private
+
+    def build_email(config)
+      return nil unless config
+
+      OneNHC::EmailNotifier.new(config)
+    rescue StandardError => e
+      warn "one-nhc: email notifications disabled: #{e.class}: #{e.message}"
+      nil
+    end
 
     def run_command(payload)
       env = {
@@ -66,6 +86,12 @@ module OneNHC
       warn "one-nhc: webhook returned HTTP #{response.code}"
     rescue StandardError => e
       warn "one-nhc: webhook failed: #{e.message}"
+    end
+
+    def deliver_email(payload)
+      @email&.deliver(payload)
+    rescue StandardError => e
+      warn "one-nhc: email notification failed: #{e.class}: #{e.message}"
     end
   end
 end

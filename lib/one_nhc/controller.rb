@@ -8,8 +8,9 @@ module OneNHC
   #
   # `sample` is the probe timestamp (NHC_TIMESTAMP) used to apply hysteresis
   # to distinct monitoring samples instead of counting the same value on every
-  # controller cycle.
-  HostView = Struct.new(:id, :name, :status, :state, :sample, keyword_init: true)
+  # controller cycle. `details` is the NHC_* template hash used by the email
+  # notification to list the checks.
+  HostView = Struct.new(:id, :name, :status, :state, :sample, :details, keyword_init: true)
 
   # Evaluates host health and optionally quarantines or re-enables hosts.
   #
