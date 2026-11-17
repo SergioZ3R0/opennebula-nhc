@@ -299,6 +299,26 @@ and only then to `act` with `dry_run: true` before enabling real actions.
 make test   # ruby -Ilib -Itests tests/run.rb
 ```
 
+### Testing the systemd units in the lab
+
+If you run [opennebula-lab](https://github.com/SergioZ3R0/opennebula-lab), you
+can exercise the real service and timer in a disposable systemd sidecar:
+
+```bash
+make lab-systemd-up       # create the sidecar and start the timer
+make lab-systemd-status   # timer, service, journal and state
+make lab-systemd-logs     # follow the controller journal
+make lab-systemd-down     # remove the sidecar
+```
+
+The sidecar uses the frontend image, shares its network namespace (so it talks
+to the real `oned`), reads the frontend `one_auth` volume read-only and runs
+systemd as PID 1. It does not change the lab's compose file or entrypoint.
+
+Requirements: a Linux Docker host with cgroup v2 and permission to run
+privileged containers (Docker Desktop may not work). The sidecar is optional;
+the normal lab remains the lightweight, tini-based setup.
+
 ## Contributing
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for the rules (read-only probes, no
