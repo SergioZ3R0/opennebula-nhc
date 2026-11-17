@@ -21,23 +21,12 @@ class TestGpu < Minitest::Test
     )
   end
 
-  def test_is_a_heavy_check
-    assert check.heavy?
-    assert_equal 1800, check.ttl
+  def test_is_a_fast_check
+    refute check.heavy?
   end
 
   def list_output(count)
     (0...count).map { |i| "GPU #{i}: NVIDIA A100 (UUID: GPU-#{i})\n" }.join
-  end
-
-  def fabric_output(state: "Completed", status: "Success")
-    <<~OUT
-      GPU 00000000:01:00.0
-          Product Name : NVIDIA A100
-          Fabric
-              State                             : #{state}
-              Status                            : #{status}
-    OUT
   end
 
   def test_ok_when_the_expected_gpus_are_present
@@ -60,41 +49,6 @@ class TestGpu < Minitest::Test
         result = check.call(config("count" => 2))
         assert_equal :crit, result.status
         assert_includes result.message, "expected 2 GPU(s), found 1"
-      end
-    end
-  end
-
-  def test_fabric_success
-    responder = lambda do |command, **|
-      if command[1] == "-L"
-        [list_output(2), "", FakeStatus.new(0), :ok]
-      else
-        [fabric_output, "", FakeStatus.new(0), :ok]
-      end
-    end
-
-    with_stub(OneNHC::Shell, :which, "/usr/bin/nvidia-smi") do
-      with_stub(OneNHC::Shell, :capture, responder) do
-        result = check.call(config("count" => 2, "fabric" => true))
-        assert_equal :ok, result.status
-      end
-    end
-  end
-
-  def test_fabric_failure
-    responder = lambda do |command, **|
-      if command[1] == "-L"
-        [list_output(1), "", FakeStatus.new(0), :ok]
-      else
-        [fabric_output(state: "Failed", status: "Error"), "", FakeStatus.new(0), :ok]
-      end
-    end
-
-    with_stub(OneNHC::Shell, :which, "/usr/bin/nvidia-smi") do
-      with_stub(OneNHC::Shell, :capture, responder) do
-        result = check.call(config("count" => 1, "fabric" => true))
-        assert_equal :crit, result.status
-        assert_includes result.message, "Fabric State=Failed"
       end
     end
   end

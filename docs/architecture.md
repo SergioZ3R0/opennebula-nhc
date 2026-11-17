@@ -25,11 +25,12 @@ The wrapper `probes/kvm-probes.d/host/system/one_nhc.rb` delegates to the binary
 installed in the frontend remotes and synced to the hosts with `onehost sync`.
 
 The probe must be fast because it runs on every monitoring cycle. Heavy checks
-(`smart`, `gpu`) declare `heavy: true` and a TTL: the probe reads
+(`smart`, `gpu-fabric`) declare `heavy: true` and a TTL: the probe reads
 `/var/lib/one-nhc/cache.json`, `one-nhc cache` runs them and writes the cache
 atomically, and the `one-nhc-cache.timer` refreshes it. A missing or stale entry
 is reported as `UNKNOWN`, never `CRIT`, so a missing timer cannot quarantine a
-host.
+host. The GPU count (`gpu`) is fast and runs on every probe cycle; only Fabric
+(`gpu-fabric`) is cached.
 
 ### CLI
 

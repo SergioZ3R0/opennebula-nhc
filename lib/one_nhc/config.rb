@@ -88,7 +88,11 @@ module OneNHC
         "gpu" => {
           "enabled" => false,
           "required" => false,
-          "fabric" => false,
+          "timeout" => 10
+        },
+        "gpu-fabric" => {
+          "enabled" => false,
+          "required" => false,
           "timeout" => 10
         },
         "package-version" => {

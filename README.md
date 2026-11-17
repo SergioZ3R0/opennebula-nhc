@@ -113,23 +113,28 @@ loop instead, run `one-nhc controller --watch`.
 | `service`          | crit     | configured systemd units or processes not running          |
 | `raid`             | crit     | software RAID (`md`) array degraded or failed              |
 | `smart`            | crit     | SMART health of configured disks (heavy, cached)           |
-| `gpu`              | crit     | NVIDIA GPU count or Fabric state/status not healthy (cached) |
+| `gpu`              | crit     | NVIDIA GPU count differs from expected (fast)              |
+| `gpu-fabric`       | crit     | GPU Fabric State/Status not healthy (heavy, cached)        |
 | `package-version`  | crit     | installed package version does not match the expected one  |
 
 Statuses: `OK`, `WARN`, `CRIT`, `SKIP` (not applicable) and `UNKNOWN` (could not
 determine). `SKIP` never triggers a quarantine.
 
 The optional checks (`fs-usage`, `network-interface`, `infiniband`, `service`,
-`raid`, `smart`, `gpu`, `package-version`) are **disabled by default** and have
-commented examples in `etc/one-nhc.conf`. Use `hosts:`/`exclude:` to enable them
-only on the relevant nodes.
+`raid`, `smart`, `gpu`, `gpu-fabric`, `package-version`) are **disabled by
+default** and have commented examples in `etc/one-nhc.conf`. Use
+`hosts:`/`exclude:` to enable them only on the relevant nodes.
 
 ### Heavy checks and cache
 
-`smart` and `gpu` are heavy: they declare a TTL and the probe **does not run
-them**. The probe reads the cache file (default
+`smart` and `gpu-fabric` are heavy: they declare a TTL and the probe **does not
+run them**. The probe reads the cache file (default
 `/var/lib/one-nhc/cache.json`); `one-nhc cache` runs the heavy checks and writes
 it atomically, and `one-nhc-cache.timer` refreshes it every 15 minutes.
+
+`gpu` is deliberately **fast**: it only runs `nvidia-smi -L` on every probe
+cycle, so a GPU that disappears is detected in the next sample. The expensive
+Fabric query lives in `gpu-fabric` and is cached.
 
 If the cache entry is missing or stale, the probe reports `UNKNOWN`, never
 `CRIT`, so a missing timer cannot quarantine a host. `one-nhc check` still runs
