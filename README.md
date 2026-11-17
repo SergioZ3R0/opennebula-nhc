@@ -102,9 +102,21 @@ loop instead, run `one-nhc controller --watch`.
 | `fs-ro`            | crit     | real filesystems remounted read-only                       |
 | `datastore-mounts` | crit     | datastore mounts missing, not writable or not a mountpoint |
 | `libvirt`          | crit     | libvirt/qemu not responding to `virsh`                     |
+| `fs-usage`         | warn/crit| filesystem space or inode usage above the thresholds       |
+| `network-interface`| crit     | interface down, missing or below the expected link speed   |
+| `infiniband`       | crit     | IB port down, rate below the minimum or firmware mismatch  |
+| `service`          | crit     | configured systemd units or processes not running          |
+| `raid`             | crit     | software RAID (`md`) array degraded or failed              |
+| `gpu`              | crit     | NVIDIA GPU count or Fabric state/status not healthy        |
+| `package-version`  | crit     | installed package version does not match the expected one  |
 
 Statuses: `OK`, `WARN`, `CRIT`, `SKIP` (not applicable) and `UNKNOWN` (could not
 determine). `SKIP` never triggers a quarantine.
+
+The optional checks (`fs-usage`, `network-interface`, `infiniband`, `service`,
+`raid`, `gpu`, `package-version`) are **disabled by default** and have commented
+examples in `etc/one-nhc.conf`. Use `hosts:`/`exclude:` to enable them only on
+the relevant nodes.
 
 ## Configuration
 

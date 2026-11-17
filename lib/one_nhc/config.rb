@@ -48,6 +48,44 @@ module OneNHC
           "enabled" => true,
           "uri" => "qemu:///system",
           "timeout" => 6
+        },
+        "fs-usage" => {
+          "enabled" => false,
+          "warn" => 90,
+          "crit" => 95,
+          "check_inodes" => false,
+          "timeout" => 5,
+          "mounts" => []
+        },
+        "network-interface" => {
+          "enabled" => false,
+          "sysfs" => "/sys/class/net",
+          "interfaces" => []
+        },
+        "infiniband" => {
+          "enabled" => false,
+          "sysfs" => "/sys/class/infiniband",
+          "require_openibd" => false,
+          "devices" => []
+        },
+        "service" => {
+          "enabled" => false,
+          "services" => []
+        },
+        "raid" => {
+          "enabled" => false,
+          "sysfs" => "/sys/block",
+          "mdstat" => "/proc/mdstat"
+        },
+        "gpu" => {
+          "enabled" => false,
+          "required" => false,
+          "fabric" => false,
+          "timeout" => 10
+        },
+        "package-version" => {
+          "enabled" => false,
+          "packages" => []
         }
       }
     }.freeze

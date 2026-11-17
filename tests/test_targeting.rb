@@ -10,7 +10,14 @@ class TestTargeting < Minitest::Test
   end
 
   def config(checks, groups = {})
-    OneNHC::Config.new("groups" => groups, "checks" => checks)
+    disabled = OneNHC.checks.each_with_object({}) do |candidate, result|
+      result[candidate.id] = { "enabled" => false }
+    end
+
+    OneNHC::Config.new(
+      "groups" => groups,
+      "checks" => disabled.merge(checks)
+    )
   end
 
   def test_default_targets_every_host
@@ -81,14 +88,15 @@ class TestTargeting < Minitest::Test
   end
 
   def test_probe_results_report_not_targeted_when_enabled
+    base = config(
+      "fs-ro" => { "enabled" => true, "hosts" => "node01" },
+      "datastore-mounts" => { "enabled" => true, "hosts" => "node01" },
+      "libvirt" => { "enabled" => true, "hosts" => "node01" }
+    )
     cfg = OneNHC::Config.new(
       "report_not_targeted" => true,
       "groups" => {},
-      "checks" => {
-        "fs-ro" => { "enabled" => true, "hosts" => "node01" },
-        "datastore-mounts" => { "enabled" => true, "hosts" => "node01" },
-        "libvirt" => { "enabled" => true, "hosts" => "node01" }
-      }
+      "checks" => base.to_h["checks"]
     )
     runner = OneNHC::Runner.new(cfg, node: "node02")
     results = runner.probe_results
