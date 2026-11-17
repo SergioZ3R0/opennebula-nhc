@@ -32,6 +32,9 @@ is reported as `UNKNOWN`, never `CRIT`, so a missing timer cannot quarantine a
 host. The GPU count (`gpu`) is fast and runs on every probe cycle; only Fabric
 (`gpu-fabric`) is cached.
 
+See [checks.md](checks.md) for the full fast/heavy contract, cache format,
+systemd units and the guide for adding a check.
+
 ### CLI
 
 `one-nhc check` prints the human report and runs heavy checks on demand.

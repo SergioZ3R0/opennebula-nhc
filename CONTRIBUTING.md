@@ -34,6 +34,10 @@ not follow them will be asked to change before it is merged.
 11. **Secrets stay out of the YAML.** SMTP passwords and webhook tokens use
     `password_file`/`password_env` (or an equivalent secret store); never commit
     credentials.
+12. **Heavy checks are cached.** A check that can take more than about one
+    second, needs root/sudo or can block on storage/network must set
+    `heavy: true` and a `ttl`, and must not run in the probe. See
+    [docs/checks.md](docs/checks.md).
 
 ## Code style (Ruby)
 
@@ -55,9 +59,14 @@ in CI.
 
 ## Adding a check
 
+Read [docs/checks.md](docs/checks.md) first. It explains the fast/heavy split,
+the cache contract and the tests expected for a new check.
+
 1. Create `checks.d/<NN>-<id>.rb`, where `NN` orders it (for example
    `40-raid.rb`).
-2. Register it with the uniform contract:
+2. Decide whether it is **fast** (runs in the probe) or **heavy** (cached by
+   `one-nhc cache`). See the decision guide in `docs/checks.md`.
+3. Register it with the uniform contract:
 
 ```ruby
 OneNHC.check(
@@ -65,7 +74,9 @@ OneNHC.check(
   description: "RAID arrays are not degraded",
   severity: :crit,
   timeout: 5,
-  tags: %w[storage]
+  tags: %w[storage],
+  heavy: false,
+  ttl: 0
 ) do |ctx|
   degraded = []
   # ... read /sys/block/md*/md/degraded ...
@@ -77,13 +88,20 @@ OneNHC.check(
 end
 ```
 
-3. Read settings from `ctx.config.check("raid")`.
-4. Add an example to `etc/one-nhc.conf` and document it in the README table.
-5. If the check does not apply to every host, set `hosts:` (and optionally
+For a heavy check use `heavy: true, ttl: <seconds>`. The TTL must be longer than
+the cache timer interval; see `systemd/one-nhc-cache.timer`.
+
+4. Read settings from `ctx.config.check("raid")`.
+5. Add an example to `etc/one-nhc.conf` and document it in the README table.
+6. If the check does not apply to every host, set `hosts:` (and optionally
    `exclude:`) in the config and document it in the README.
-6. Add tests in `tests/test_<id>.rb`, using fixtures or stubbing
+7. Add tests in `tests/test_<id>.rb`, using fixtures or stubbing
    `OneNHC::Shell`.
-7. Run `make test` and `./scripts/check-style.sh`.
+8. For heavy checks, also test:
+   - `one-nhc cache` writes the result;
+   - `one-nhc probe` reads it;
+   - a missing/stale cache produces `UNKNOWN`, never `CRIT`.
+9. Run `make test` and `./scripts/check-style.sh`.
 
 ## Tests
 
@@ -91,6 +109,10 @@ end
 - Tests must not depend on the host: write fixtures to a temporary directory or
   stub `OneNHC::Shell`.
 - Tests must be deterministic and fast.
+- Heavy checks must test the cache path: fresh cache, missing/stale cache
+  (`UNKNOWN`, never `CRIT`) and the direct `one-nhc check` path. See
+  `tests/test_cache.rb`, `tests/test_runner_cache.rb` and
+  `tests/test_smart.rb`.
 
 ## Commits and pull requests
 

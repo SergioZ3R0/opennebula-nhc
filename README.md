@@ -145,6 +145,10 @@ without printing anything.
 `smart.sudo: true` and add a sudoers rule for `smartctl`, or the check reports
 `UNKNOWN` instead of a false `CRIT`.
 
+See [docs/checks.md](docs/checks.md) for the full fast/heavy contract, the cache
+format, systemd units, troubleshooting and a step-by-step guide for adding a
+check.
+
 ## Configuration
 
 `/etc/one-nhc/one-nhc.conf` is YAML and is merged with the built-in defaults:
