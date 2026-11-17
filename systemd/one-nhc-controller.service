@@ -13,5 +13,5 @@ User=oneadmin
 Group=oneadmin
 StateDirectory=one-nhc
 StateDirectoryMode=0750
-ExecStart=/usr/local/bin/one-nhc controller --once
+ExecStart=/usr/local/bin/one-nhc controller --once --quiet
 Nice=5

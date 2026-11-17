@@ -49,18 +49,20 @@ cooldown, and then:
 Safety: only `CRIT` starts the counter (`SKIP`, `WARN` and `UNKNOWN` never
 quarantine), counters advance once per distinct `NHC_TIMESTAMP` sample (not per
 controller cycle), decisions are announced once per episode, and the controller
-refuses to disable the last healthy monitored host. It also tracks whether it
-disabled each host, so an operator enabling a host outside one-nhc resets the
-state instead of fighting the operator.
+refuses to disable when fewer than `min_healthy_hosts` healthy monitored hosts
+would remain. It also tracks whether it disabled each host, so an operator
+enabling a host outside one-nhc resets the state instead of fighting the
+operator.
 
 A disabled host is not monitored, so its monitoring attributes do not change.
 `reenable_after` optionally enables it again after a delay as a trial, and
 `monitor_grace` ignores the stale `CRIT` value until the probe has had time to
 report fresh data.
 
-State lives in `/var/lib/one-nhc/state.json` and is written atomically. The
-systemd timer runs `--once` every two minutes; `--watch` runs the same loop in
-the foreground.
+State lives in `/var/lib/one-nhc/state.json` and is written atomically. A lock
+file next to it keeps a single controller per state, so the systemd timer and a
+manual `--watch` cannot run at the same time. The systemd timer runs `--once
+--quiet` every two minutes; `--watch` runs the same loop in the foreground.
 
 ## Check contract
 

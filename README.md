@@ -92,7 +92,7 @@ sudo systemctl enable --now one-nhc-controller.timer
 journalctl -u one-nhc-controller.service -f
 ```
 
-The timer runs `one-nhc controller --once` every two minutes. For a foreground
+The timer runs `one-nhc controller --once --quiet` every two minutes. For a foreground
 loop instead, run `one-nhc controller --watch`.
 
 ## Checks
@@ -196,6 +196,7 @@ controller:
   reenable_after: 0
   monitor_grace: 900
   never_disable_last: true
+  min_healthy_hosts: 1
   include_hosts: all
   # exclude_hosts: "stor[01-02]"
   interval: 60
@@ -212,8 +213,12 @@ Safety rules:
   samples. Samples are identified by `NHC_TIMESTAMP`, so running the controller
   more often than the probe does not speed up (or fake) the counter.
 - **Cooldown:** at least `cooldown` seconds between actions on the same host.
-- **Last host:** it refuses to disable a host when no other healthy monitored
-  host remains (`never_disable_last: true`).
+- **Minimum healthy hosts:** it refuses to disable when fewer than
+  `min_healthy_hosts` healthy monitored hosts would remain. Setting
+  `never_disable_last: false` disables the safeguard entirely.
+- **Single controller:** a lock file next to the state prevents the systemd
+  timer and a manual `--watch` from running at the same time; the second
+  process skips the cycle.
 - **One announcement per episode:** a decision is logged/notified once; a
   recovery resets the episode.
 - **External changes:** if an operator enables a host outside one-nhc, the
@@ -258,6 +263,7 @@ the controller cycle.
 ```bash
 one-nhc controller --once --mode notify
 one-nhc controller --once --mode act --dry-run
+one-nhc controller --once --quiet
 one-nhc controller --once --json
 ```
 

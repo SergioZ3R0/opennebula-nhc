@@ -29,8 +29,8 @@ not follow them will be asked to change before it is merged.
    `hosts:` (and optionally `exclude:`). A check that is not targeted must not
    run and must not be reported as `SKIP`.
 10. **Controller safety.** Actions live in the controller and only run in `act`
-    mode. Keep hysteresis, cooldown, `dry_run`, host targeting and the
-    "never disable the last healthy host" safeguard.
+    mode. Keep hysteresis, cooldown, `dry_run`, host targeting, the
+    `min_healthy_hosts` safeguard and the single-controller lock.
 
 ## Code style (Ruby)
 

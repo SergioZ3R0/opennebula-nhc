@@ -193,6 +193,46 @@ class TestController < Minitest::Test
     assert(@logs.any? { |line| line.include?("(refused)") })
   end
 
+  def test_min_healthy_hosts_refuses_to_leave_too_few
+    api = FakeAPI.new([
+                        host(id: 1, name: "node01", status: "CRIT"),
+                        host(id: 2, name: "node02", status: "OK")
+                      ])
+    cfg = config("consecutive_crit" => 1, "min_healthy_hosts" => 2)
+
+    decisions = run_times(controller(api, mode: "act", cfg: cfg), 1)
+
+    assert_empty api.disabled
+    assert_equal :refuse_disable, decisions.last.action
+    assert_includes decisions.last.reason, "minimum is 2"
+  end
+
+  def test_min_healthy_hosts_allows_when_enough_hosts_remain
+    api = FakeAPI.new([
+                        host(id: 1, name: "node01", status: "CRIT"),
+                        host(id: 2, name: "node02", status: "OK"),
+                        host(id: 3, name: "node03", status: "OK")
+                      ])
+    cfg = config("consecutive_crit" => 1, "min_healthy_hosts" => 2)
+
+    run_times(controller(api, mode: "act", cfg: cfg), 1)
+
+    assert_equal [1], api.disabled
+  end
+
+  def test_never_disable_last_false_disables_the_safeguard
+    api = FakeAPI.new([host(id: 1, name: "node01", status: "CRIT")])
+    cfg = config(
+      "consecutive_crit" => 1,
+      "min_healthy_hosts" => 5,
+      "never_disable_last" => false
+    )
+
+    run_times(controller(api, mode: "act", cfg: cfg), 1)
+
+    assert_equal [1], api.disabled
+  end
+
   def test_unknown_and_warn_do_not_disable
     api = FakeAPI.new([
                         host(id: 1, name: "node01", status: "UNKNOWN"),

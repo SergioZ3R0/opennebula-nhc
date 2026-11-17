@@ -47,6 +47,17 @@ class TestConfig < Minitest::Test
     assert_raises(ArgumentError) { config("cooldown" => -1).validate! }
   end
 
+  def test_rejects_zero_min_healthy_hosts
+    error = assert_raises(ArgumentError) do
+      config("min_healthy_hosts" => 0).validate!
+    end
+    assert_includes error.message, "min_healthy_hosts"
+  end
+
+  def test_accepts_min_healthy_hosts
+    assert config("min_healthy_hosts" => 3).validate!
+  end
+
   def test_accepts_zero_reenable_after
     assert config("reenable_after" => 0).validate!
   end

@@ -42,6 +42,7 @@ def usage
           --mode MODE      controller mode: monitor, notify or act
           --dry-run        log controller decisions without changing hosts
           --state FILE     controller state file (default: #{DEFAULT_STATE})
+      -q, --quiet          suppress the controller's "no action needed" message
       -h, --help           show this help
   USAGE
 end
@@ -56,7 +57,8 @@ options = {
   interval: nil,
   mode: nil,
   dry_run: nil,
-  state: nil
+  state: nil,
+  quiet: false
 }
 
 parser = OptionParser.new do |opts|
@@ -70,6 +72,7 @@ parser = OptionParser.new do |opts|
   opts.on("--mode MODE") { |value| options[:mode] = value }
   opts.on("--dry-run") { options[:dry_run] = true }
   opts.on("--state FILE") { |value| options[:state] = value }
+  opts.on("-q", "--quiet") { options[:quiet] = true }
   opts.on("-h", "--help") { puts usage; exit 0 }
 end
 parser.parse!(ARGV)
@@ -85,7 +88,12 @@ def build_runner(options)
   [config, OneNHC::Runner.new(config, only: options[:only], node: node)]
 end
 
-def build_controller(config, options)
+def controller_state_file(config, options)
+  state_file = options[:state] || config.dig("controller", "state_file") || DEFAULT_STATE
+  state_file.to_s.strip.empty? ? DEFAULT_STATE : state_file
+end
+
+def build_controller(config, options, state_file)
   raise ArgumentError, "--once and --watch are mutually exclusive" if options[:once] && options[:watch]
 
   mode = options[:mode]
@@ -95,9 +103,6 @@ def build_controller(config, options)
   end
 
   require "one_nhc/on_api"
-
-  state_file = options[:state] || config.dig("controller", "state_file") || DEFAULT_STATE
-  state_file = DEFAULT_STATE if state_file.to_s.strip.empty?
 
   OneNHC::Controller.new(
     config,
@@ -168,16 +173,31 @@ begin
   when "controller"
     config     = OneNHC::Config.load(options[:config])
     config.validate!
-    controller = build_controller(config, options)
+    state_file = controller_state_file(config, options)
+    controller = build_controller(config, options, state_file)
 
     interval = options[:interval] || config.dig("controller", "interval") || 60
     interval = Integer(interval)
     raise ArgumentError, "controller interval must be >= 1" if interval < 1
 
-    if options[:watch]
-      run_controller_watch(controller, interval, options[:json])
-    else
-      run_controller_once(controller, options[:json])
+    lock = OneNHC::Lock.new("#{state_file}.lock")
+    unless lock.acquire
+      if options[:json]
+        puts "[]"
+      else
+        puts "[one-nhc] another controller is already running; skipping this cycle"
+      end
+      exit 0
+    end
+
+    begin
+      if options[:watch]
+        run_controller_watch(controller, interval, options[:json])
+      else
+        run_controller_once(controller, options[:json], quiet: options[:quiet])
+      end
+    ensure
+      lock.release
     end
   when "list"
     OneNHC.checks.each { |check| puts format("%-24s %s", check.id, check.description) }

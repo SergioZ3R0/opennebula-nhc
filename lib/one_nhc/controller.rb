@@ -149,9 +149,12 @@ module OneNHC
       return nil if entry["crit_count"].to_i < integer("consecutive_crit", 3)
       return nil if cooling_down?(entry)
 
-      if never_disable_last? && healthy <= 0
-        return announce(host, entry, :refuse_disable,
-                        "would disable the last healthy host")
+      min_healthy = minimum_healthy_hosts
+      if min_healthy.positive? && healthy < min_healthy
+        return announce(
+          host, entry, :refuse_disable,
+          "would leave #{healthy} healthy host(s), minimum is #{min_healthy}"
+        )
       end
 
       return nil if entry["notified_action"] == "disable"
@@ -295,8 +298,10 @@ module OneNHC
       (@now.call.to_i - entry["last_action"].to_i) < integer("cooldown", 300)
     end
 
-    def never_disable_last?
-      setting("never_disable_last") != false
+    def minimum_healthy_hosts
+      return 0 if setting("never_disable_last") == false
+
+      integer("min_healthy_hosts", 1)
     end
 
     def act?

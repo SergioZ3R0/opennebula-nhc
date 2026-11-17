@@ -22,6 +22,7 @@ module OneNHC
         "reenable_after" => 0,
         "monitor_grace" => 900,
         "never_disable_last" => true,
+        "min_healthy_hosts" => 1,
         "include_hosts" => "all",
         "exclude_hosts" => nil,
         "interval" => 60,
@@ -130,7 +131,7 @@ module OneNHC
 
     MODES = %w[monitor notify act].freeze
     NON_NEGATIVE = %w[cooldown reenable_after monitor_grace].freeze
-    POSITIVE     = %w[consecutive_crit consecutive_ok interval].freeze
+    POSITIVE     = %w[consecutive_crit consecutive_ok interval min_healthy_hosts].freeze
 
     def validate_controller!(controller, groups)
       unless controller.is_a?(Hash)
