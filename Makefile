@@ -8,8 +8,7 @@ CONFDIR ?= /etc/one-nhc
 ON_REMOTES ?= /var/lib/one/remotes/im/kvm-probes.d/host/system
 SYSTEMD ?= /etc/systemd/system
 
-.PHONY: test install probe install-probe install-systemd uninstall \
-	lab-systemd-up lab-systemd-status lab-systemd-logs lab-systemd-down
+.PHONY: test install probe install-probe install-systemd uninstall
 
 test:
 	ruby -Ilib -Itests tests/run.rb
@@ -40,16 +39,3 @@ uninstall:
 	rm -rf $(DESTDIR)$(LIBDIR)
 	rm -f $(DESTDIR)$(SYSTEMD)/one-nhc-controller.service
 	rm -f $(DESTDIR)$(SYSTEMD)/one-nhc-controller.timer
-
-# Optional: test the real systemd units against an opennebula-lab frontend.
-lab-systemd-up:
-	./scripts/lab-systemd.sh up
-
-lab-systemd-status:
-	./scripts/lab-systemd.sh status
-
-lab-systemd-logs:
-	./scripts/lab-systemd.sh logs
-
-lab-systemd-down:
-	./scripts/lab-systemd.sh down
