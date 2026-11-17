@@ -297,6 +297,25 @@ one-nhc notify-test
 one-nhc notify-test --to oncall@example.com
 ```
 
+For a local MTA (`postfix`, `sendmail`, `msmtp`, …) use the `sendmail`
+transport. It needs **no SMTP user or password**: the MTA already has the relay
+and credentials, as in Icinga/Nagios.
+
+```yaml
+controller:
+  notify:
+    email:
+      transport: sendmail
+      to: ops@example.com
+      from: one-nhc@example.com
+      sendmail_path: /usr/sbin/sendmail   # default
+      sendmail_args: ["-t", "-i"]         # default
+```
+
+`notify-test` works with both transports. With `sendmail`, the local MTA must
+be installed and able to deliver (for Gmail/Workspace, configure it with a
+relay or use `msmtp`).
+
 ```bash
 one-nhc controller --once --mode notify
 one-nhc controller --once --mode act --dry-run

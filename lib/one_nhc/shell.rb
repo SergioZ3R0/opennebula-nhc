@@ -20,9 +20,16 @@ module OneNHC
 
     # Returns [stdout, stderr, status, state].
     # state is one of :ok, :timeout or :notfound.
-    def capture(command, timeout:, env: {})
+    def capture(command, timeout:, env: {}, input: nil)
       Open3.popen3(env, *command, pgroup: true) do |stdin, stdout, stderr, wait_thr|
-        stdin.close
+        begin
+          stdin.write(input.to_s) unless input.nil?
+        rescue Errno::EPIPE, IOError
+          # The command closed stdin early; let it finish.
+        ensure
+          stdin.close
+        end
+
         out_thread = Thread.new { stdout.read }
         err_thread = Thread.new { stderr.read }
 

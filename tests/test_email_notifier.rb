@@ -4,6 +4,7 @@
 
 require_relative "test_helper"
 require "fileutils"
+require "shellwords"
 
 class TestEmailNotifier < Minitest::Test
   class FakeSMTP
@@ -93,6 +94,22 @@ class TestEmailNotifier < Minitest::Test
 
   def notifier(overrides = {})
     OneNHC::EmailNotifier.new(config(overrides), smtp_factory: factory)
+  end
+
+  def sendmail_config(path, overrides = {})
+    {
+      "transport" => "sendmail",
+      "to" => "ops@example.com",
+      "from" => "one-nhc@example.com",
+      "sendmail_path" => path
+    }.merge(overrides)
+  end
+
+  def write_script(name, body)
+    path = File.join(@dir, name)
+    File.write(path, "#!/bin/sh\n#{body}\n")
+    File.chmod(0o755, path)
+    path
   end
 
   def call(name)
@@ -231,5 +248,45 @@ class TestEmailNotifier < Minitest::Test
       notifier("user" => nil)
     end
     assert_includes error.message, "email.user"
+  end
+
+  def test_sendmail_transport_pipes_the_message
+    out    = File.join(@dir, "message.eml")
+    script = write_script("sendmail-ok", "cat > #{Shellwords.escape(out)}\nexit 0")
+    mailer = OneNHC::EmailNotifier.new(
+      sendmail_config(script), smtp_factory: factory
+    )
+
+    assert mailer.deliver(payload)
+
+    body = File.read(out)
+    assert_includes body, "Subject: [one-nhc] CRIT | node01 | disable"
+    assert_includes body, "Host health alert"
+    assert_includes body, "read-only: /data (ext4)"
+    assert_empty @smtp.calls
+  end
+
+  def test_sendmail_failure_is_wrapped
+    script = write_script("sendmail-fail", "echo 'mta down' >&2\nexit 75")
+    mailer = OneNHC::EmailNotifier.new(
+      sendmail_config(script), smtp_factory: factory
+    )
+
+    error = assert_raises(OneNHC::EmailNotifier::Error) do
+      mailer.deliver(payload)
+    end
+    assert_includes error.message, "sendmail failed"
+    assert_includes error.message, "mta down"
+  end
+
+  def test_sendmail_missing_command_is_wrapped
+    mailer = OneNHC::EmailNotifier.new(
+      sendmail_config("/does/not/exist"), smtp_factory: factory
+    )
+
+    error = assert_raises(OneNHC::EmailNotifier::Error) do
+      mailer.deliver(payload)
+    end
+    assert_includes error.message, "command not found"
   end
 end

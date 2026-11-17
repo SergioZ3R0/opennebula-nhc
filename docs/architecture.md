@@ -66,9 +66,11 @@ manual `--watch` cannot run at the same time. The systemd timer runs `--once
 
 Notifications go to a command, a JSON webhook and/or email. The email body is
 rendered from the host `NHC_*` attributes (summary counts and the failed
-checks) as HTML plus a plain-text alternative. SMTP credentials are read from
-`password_file` or `password_env`, never from the YAML, and `one-nhc
-notify-test` sends a test message without waiting for a host failure.
+checks) as HTML plus a plain-text alternative. Email uses either an
+authenticated SMTP relay (credentials from `password_file` or `password_env`,
+never from the YAML) or a local MTA through `transport: sendmail`, which needs
+no credentials. `one-nhc notify-test` sends a test message without waiting for
+a host failure.
 
 ## Check contract
 

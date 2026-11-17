@@ -201,4 +201,62 @@ class TestConfig < Minitest::Test
     error = assert_raises(ArgumentError) { email_config("user" => nil).validate! }
     assert_includes error.message, "email.user"
   end
+
+  def sendmail_email(overrides = {})
+    {
+      "transport" => "sendmail",
+      "to" => "ops@example.com",
+      "from" => "one-nhc@example.com"
+    }.merge(overrides)
+  end
+
+  def sendmail_config(overrides = {})
+    config("notify" => { "email" => sendmail_email(overrides) })
+  end
+
+  def test_accepts_sendmail_without_smtp_credentials
+    assert sendmail_config.validate!
+  end
+
+  def test_accepts_sendmail_path_and_args
+    assert sendmail_config(
+      "sendmail_path" => "/usr/sbin/sendmail",
+      "sendmail_args" => ["-t", "-i"]
+    ).validate!
+  end
+
+  def test_rejects_unknown_email_transport
+    error = assert_raises(ArgumentError) do
+      email_config("transport" => "smtp2").validate!
+    end
+    assert_includes error.message, "email.transport"
+  end
+
+  def test_rejects_sendmail_with_smtp_settings
+    error = assert_raises(ArgumentError) do
+      sendmail_config("host" => "smtp.example.com").validate!
+    end
+    assert_includes error.message, "only valid with transport: smtp"
+  end
+
+  def test_rejects_smtp_with_sendmail_settings
+    error = assert_raises(ArgumentError) do
+      email_config("sendmail_path" => "/usr/sbin/sendmail").validate!
+    end
+    assert_includes error.message, "only valid with transport: sendmail"
+  end
+
+  def test_rejects_invalid_sendmail_args
+    error = assert_raises(ArgumentError) do
+      sendmail_config("sendmail_args" => "-t").validate!
+    end
+    assert_includes error.message, "sendmail_args"
+  end
+
+  def test_rejects_empty_sendmail_path
+    error = assert_raises(ArgumentError) do
+      sendmail_config("sendmail_path" => " ").validate!
+    end
+    assert_includes error.message, "sendmail_path"
+  end
 end

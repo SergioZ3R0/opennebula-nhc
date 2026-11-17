@@ -204,6 +204,12 @@ module OneNHC
     def validate_email!(email)
       raise ArgumentError, "controller.notify.email must be a mapping" unless email.is_a?(Hash)
 
+      transport = (email["transport"] || "smtp").to_s
+      unless %w[smtp sendmail].include?(transport)
+        raise ArgumentError,
+              "controller.notify.email.transport must be smtp or sendmail"
+      end
+
       recipients = email["to"]
       recipients = [recipients] unless recipients.is_a?(Array)
       recipients = recipients.compact.map(&:to_s).reject(&:empty?)
@@ -216,13 +222,36 @@ module OneNHC
         end
       end
 
-      %w[from host].each do |key|
-        value = email[key].to_s.strip
-        raise ArgumentError, "controller.notify.email.#{key} is required" if value.empty?
+      from = email["from"].to_s.strip
+      raise ArgumentError, "controller.notify.email.from is required" if from.empty?
+
+      unless from.include?("@")
+        raise ArgumentError, "controller.notify.email.from has an invalid address"
       end
 
-      unless email["from"].to_s.include?("@")
-        raise ArgumentError, "controller.notify.email.from has an invalid address"
+      timeout = email["timeout"]
+      unless timeout.nil?
+        value = positive_integer("notify.email.timeout", timeout)
+        raise ArgumentError, "controller.notify.email.timeout must be >= 1" if value < 1
+      end
+
+      if transport == "sendmail"
+        validate_sendmail!(email)
+      else
+        validate_smtp!(email)
+      end
+    end
+
+    def validate_smtp!(email)
+      host = email["host"].to_s.strip
+      raise ArgumentError, "controller.notify.email.host is required" if host.empty?
+
+      %w[sendmail_path sendmail_args].each do |key|
+        value = email[key]
+        next if value.nil? || (value.respond_to?(:empty?) && value.empty?)
+
+        raise ArgumentError,
+              "controller.notify.email.#{key} is only valid with transport: sendmail"
       end
 
       port = email["port"]
@@ -236,12 +265,6 @@ module OneNHC
       tls = (email["tls"] || "starttls").to_s
       unless %w[starttls ssl none].include?(tls)
         raise ArgumentError, "controller.notify.email.tls must be one of starttls, ssl, none"
-      end
-
-      timeout = email["timeout"]
-      unless timeout.nil?
-        value = positive_integer("notify.email.timeout", timeout)
-        raise ArgumentError, "controller.notify.email.timeout must be >= 1" if value < 1
       end
 
       user = email["user"].to_s.strip
@@ -261,6 +284,30 @@ module OneNHC
       if user.empty? && (!env.empty? || !file.empty?)
         raise ArgumentError,
               "controller.notify.email password source requires email.user"
+      end
+    end
+
+    def validate_sendmail!(email)
+      %w[host port tls user password_env password_file helo].each do |key|
+        value = email[key]
+        next if value.nil? || value.to_s.strip.empty?
+
+        raise ArgumentError,
+              "controller.notify.email.#{key} is only valid with transport: smtp"
+      end
+
+      path = email["sendmail_path"]
+      if !path.nil? && path.to_s.strip.empty?
+        raise ArgumentError, "controller.notify.email.sendmail_path cannot be empty"
+      end
+
+      args = email["sendmail_args"]
+      return if args.nil?
+
+      unless args.is_a?(Array) && !args.empty? &&
+             args.all? { |arg| !arg.to_s.strip.empty? }
+        raise ArgumentError,
+              "controller.notify.email.sendmail_args must be a non-empty list of strings"
       end
     end
 
