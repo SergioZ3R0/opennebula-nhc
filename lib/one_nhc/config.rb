@@ -28,6 +28,12 @@ module OneNHC
         "exclude_hosts" => nil,
         "interval" => 60,
         "state_file" => "/var/lib/one-nhc/state.json",
+        "hooks" => {
+          "timeout" => 10,
+          "on_disable" => nil,
+          "on_enable" => nil,
+          "on_reenable" => nil
+        },
         "notify" => {
           "command" => nil,
           "webhook" => nil,
@@ -230,6 +236,32 @@ module OneNHC
       state_file = controller["state_file"]
       unless state_file.is_a?(String) && !state_file.strip.empty?
         raise ArgumentError, "controller.state_file must be a non-empty path"
+      end
+
+      hooks = controller["hooks"] || {}
+      raise ArgumentError, "controller.hooks must be a mapping" unless hooks.is_a?(Hash)
+
+      unknown = hooks.keys.map(&:to_s) -
+                %w[timeout on_disable on_enable on_reenable]
+      unless unknown.empty?
+        raise ArgumentError,
+              "controller.hooks has unknown keys: #{unknown.join(', ')}"
+      end
+
+      unless hooks["timeout"].nil?
+        value = positive_integer("hooks.timeout", hooks["timeout"])
+        raise ArgumentError, "controller.hooks.timeout must be >= 1" if value < 1
+      end
+
+      %w[on_disable on_enable on_reenable].each do |key|
+        value = hooks[key]
+        next if value.nil?
+
+        commands = value.is_a?(Array) ? value : [value]
+        unless commands.all? { |command| command.is_a?(String) && !command.strip.empty? }
+          raise ArgumentError,
+                "controller.hooks.#{key} must be a command or a list of commands"
+        end
       end
 
       notify = controller["notify"] || {}

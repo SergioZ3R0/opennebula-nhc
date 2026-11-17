@@ -42,6 +42,18 @@ class TestController < Minitest::Test
     end
   end
 
+  class FakeHooks
+    attr_reader :payloads
+
+    def initialize
+      @payloads = []
+    end
+
+    def run(payload)
+      @payloads << payload
+    end
+  end
+
   class Clock
     attr_reader :now
 
@@ -88,12 +100,13 @@ class TestController < Minitest::Test
     OneNHC::State.new(path)
   end
 
-  def controller(api, cfg: config, store: state_store, mode: nil, dry_run: nil)
+  def controller(api, cfg: config, store: state_store, mode: nil, dry_run: nil, hooks: nil)
     OneNHC::Controller.new(
       cfg,
       api: api,
       state: store,
       notifier: @notifier,
+      hooks: hooks,
       now: @clock,
       logger: ->(message) { @logs << message },
       mode: mode,
@@ -406,5 +419,70 @@ class TestController < Minitest::Test
     api.hosts.first.sample = 300
     run_times(ctl, 1)
     assert_equal [1], api.disabled
+  end
+
+  def test_hooks_run_for_an_applied_disable
+    api = FakeAPI.new([
+                        host(id: 1, name: "node01", status: "CRIT"),
+                        host(id: 2, name: "node02", status: "OK")
+                      ])
+    hooks = FakeHooks.new
+
+    run_times(controller(api, mode: "act", hooks: hooks), 3)
+
+    assert_equal 1, hooks.payloads.size
+    assert_equal "disable", hooks.payloads.first[:action]
+    assert_equal "node01", hooks.payloads.first[:host]
+    assert_equal true, hooks.payloads.first[:applied]
+  end
+
+  def test_hooks_do_not_run_in_notify_mode
+    api = FakeAPI.new([
+                        host(id: 1, name: "node01", status: "CRIT"),
+                        host(id: 2, name: "node02", status: "OK")
+                      ])
+    hooks = FakeHooks.new
+
+    run_times(controller(api, mode: "notify", hooks: hooks), 3)
+
+    assert_empty hooks.payloads
+  end
+
+  def test_hooks_do_not_run_in_dry_run
+    api = FakeAPI.new([
+                        host(id: 1, name: "node01", status: "CRIT"),
+                        host(id: 2, name: "node02", status: "OK")
+                      ])
+    hooks = FakeHooks.new
+
+    run_times(controller(api, mode: "act", dry_run: true, hooks: hooks), 3)
+
+    assert_empty hooks.payloads
+  end
+
+  def test_hooks_run_on_enable
+    api = FakeAPI.new([
+                        host(id: 1, name: "node01", status: "OK", state: DISABLED)
+                      ])
+    st = state_store
+    entry = st.entry("node01")
+    entry["disabled_by_nhc"] = true
+    entry["last_action"]     = 0
+    hooks = FakeHooks.new
+
+    run_times(controller(api, mode: "act", store: st, hooks: hooks), 2)
+
+    assert_equal 1, hooks.payloads.size
+    assert_equal "enable", hooks.payloads.first[:action]
+    assert_equal true, hooks.payloads.first[:applied]
+  end
+
+  def test_hooks_do_not_run_for_refuse_disable
+    api = FakeAPI.new([host(id: 1, name: "node01", status: "CRIT")])
+    hooks = FakeHooks.new
+
+    run_times(controller(api, mode: "act", hooks: hooks), 3)
+
+    assert_empty hooks.payloads
   end
 end

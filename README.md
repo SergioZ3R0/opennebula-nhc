@@ -359,6 +359,30 @@ controller:
 be installed and able to deliver (for Gmail/Workspace, configure it with a
 relay or use `msmtp`).
 
+#### Hooks
+
+Hooks run after the controller **applies** an action, only in `act` mode and
+never in `monitor`, `notify` or `dry_run`. They receive the `NHC_*` environment
+(including `NHC_TIME` and `NHC_SAMPLE`) and are timeout-limited; failures are
+logged and do not abort the cycle.
+
+```yaml
+controller:
+  hooks:
+    timeout: 10
+    on_disable: /usr/local/bin/one-nhc-on-disable
+    on_enable: /usr/local/bin/one-nhc-on-enable
+    on_reenable: /usr/local/bin/one-nhc-on-reenable
+```
+
+Each key accepts a command or a list of commands. Hooks are for automation
+(ticketing, CMDB, evacuation). one-nhc does **not** evacuate VMs itself: use an
+`on_disable` hook like [`examples/hooks/on-disable.sh`](examples/hooks/on-disable.sh),
+which is a dry-run template by default. It reads `NHC_EVACUATE` and
+`NHC_EVACUATE_TARGET` from the controller environment; set them in the systemd
+unit or a drop-in, and it only prints the migration commands unless
+`NHC_EVACUATE=1`.
+
 ```bash
 one-nhc controller --once --mode notify
 one-nhc controller --once --mode act --dry-run
@@ -394,9 +418,9 @@ and only then to `act` with `dry_run: true` before enabling real actions.
 - **M1 (done):** probe framework, 3 checks, human/JSON/IM adapters.
 - **M2 (done):** frontend controller with hysteresis, notifications and
   `onehost disable/enable`.
-- **M3:** cached heavyweight checks (RAID, SMART, InfiniBand), hooks and
-  optional evacuation.
-- **M4:** docs/blog and an upstream docs PR.
+- **M3 (done):** HPC checks, heavy-check cache, SMART and GPU Fabric, hooks;
+  evacuation is an external hook example, not a built-in action.
+- **M4:** docs/blog, an upstream docs PR, packaging and release automation.
 
 ## Development
 

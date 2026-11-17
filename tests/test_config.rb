@@ -202,6 +202,38 @@ class TestConfig < Minitest::Test
     assert_includes error.message, "email.user"
   end
 
+  def test_accepts_hooks_config
+    assert config(
+      "hooks" => {
+        "timeout" => 5,
+        "on_disable" => "/usr/local/bin/on-disable",
+        "on_enable" => ["cmd-1", "cmd-2"],
+        "on_reenable" => "cmd-3"
+      }
+    ).validate!
+  end
+
+  def test_rejects_unknown_hook_key
+    error = assert_raises(ArgumentError) do
+      config("hooks" => { "on_diable" => "cmd" }).validate!
+    end
+    assert_includes error.message, "unknown keys"
+  end
+
+  def test_rejects_invalid_hook_timeout
+    error = assert_raises(ArgumentError) do
+      config("hooks" => { "timeout" => 0 }).validate!
+    end
+    assert_includes error.message, "hooks.timeout"
+  end
+
+  def test_rejects_invalid_hook_command
+    error = assert_raises(ArgumentError) do
+      config("hooks" => { "on_disable" => [""] }).validate!
+    end
+    assert_includes error.message, "hooks.on_disable"
+  end
+
   def sendmail_email(overrides = {})
     {
       "transport" => "sendmail",

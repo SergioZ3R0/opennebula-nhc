@@ -33,12 +33,13 @@ module OneNHC
 
     Decision = Struct.new(:host, :action, :reason, :applied, keyword_init: true)
 
-    def initialize(config, api:, state:, notifier: nil, now: -> { Time.now },
+    def initialize(config, api:, state:, notifier: nil, hooks: nil, now: -> { Time.now },
                    logger: nil, mode: nil, dry_run: nil)
       @config   = config
       @api      = api
       @state    = state
       @notifier = notifier
+      @hooks    = hooks
       @now      = now
       @logger   = logger || ->(message) { puts message }
 
@@ -266,6 +267,11 @@ module OneNHC
 
       log(message)
       @notifier&.notify(message, host: host, decision: decision) if notify?
+
+      if act? && !@dry_run && decision.applied
+        @hooks&.run(OneNHC::Payload.build(message, host, decision))
+      end
+
       decision
     end
 

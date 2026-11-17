@@ -80,6 +80,12 @@ never from the YAML) or a local MTA through `transport: sendmail`, which needs
 no credentials. `one-nhc notify-test` sends a test message without waiting for
 a host failure.
 
+When the controller applies an action (`act` mode, not `dry_run`), it can run
+post-action hooks (`on_disable`, `on_enable`, `on_reenable`). Hooks are external
+automation (ticketing, CMDB, evacuation) and never run in `monitor`, `notify` or
+`dry_run`. Evacuation is an external hook example, not a built-in controller
+action.
+
 ## Check contract
 
 Every check is registered with `OneNHC.check` and receives a `Context`:

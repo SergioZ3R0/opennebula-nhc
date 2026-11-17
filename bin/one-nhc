@@ -82,8 +82,11 @@ parser = OptionParser.new do |opts|
   opts.on("--cache FILE") { |value| options[:cache] = value }
   opts.on("--to EMAIL") { |value| options[:to] = value }
   opts.on("-q", "--quiet") { options[:quiet] = true }
+  opts.on("-V") { puts OneNHC::VERSION; exit 0 }
   opts.on("-h", "--help") { puts usage; exit 0 }
 end
+parser.version = OneNHC::VERSION
+parser.program_name = "one-nhc"
 parser.parse!(ARGV)
 
 command = ARGV.shift
@@ -124,6 +127,7 @@ def build_controller(config, options, state_file)
     api: OneNHC::OnAPI.new,
     state: OneNHC::State.new(state_file),
     notifier: OneNHC::Notifier.new(config),
+    hooks: OneNHC::Hooks.new(config),
     mode: mode,
     dry_run: options[:dry_run],
     logger: options[:json] ? ->(_message) {} : nil

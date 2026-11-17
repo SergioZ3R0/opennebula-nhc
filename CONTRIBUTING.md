@@ -30,7 +30,9 @@ not follow them will be asked to change before it is merged.
    run and must not be reported as `SKIP`.
 10. **Controller safety.** Actions live in the controller and only run in `act`
     mode. Keep hysteresis, cooldown, `dry_run`, host targeting, the
-    `min_healthy_hosts` safeguard and the single-controller lock.
+    `min_healthy_hosts` safeguard and the single-controller lock. Hooks run only
+    after applied actions, never in `monitor`, `notify` or `dry_run`;
+    evacuation stays an external hook.
 11. **Secrets stay out of the YAML.** SMTP passwords and webhook tokens use
     `password_file`/`password_env` (or an equivalent secret store); never commit
     credentials.

@@ -27,17 +27,7 @@ module OneNHC
 
     # Payload shared by every notification channel.
     def self.payload(message, host, decision, now: Time.now)
-      {
-        message: message,
-        host: host.name,
-        host_id: host.id,
-        status: host.status,
-        action: decision.action.to_s,
-        applied: decision.applied,
-        time: now.utc.iso8601,
-        sample: host.respond_to?(:sample) ? host.sample : nil,
-        details: host.respond_to?(:details) ? (host.details || {}) : {}
-      }
+      Payload.build(message, host, decision, now: now)
     end
 
     private
