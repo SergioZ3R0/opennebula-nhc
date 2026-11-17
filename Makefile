@@ -8,7 +8,7 @@ CONFDIR ?= /etc/one-nhc
 ON_REMOTES ?= /var/lib/one/remotes/im/kvm-probes.d/host/system
 SYSTEMD ?= /etc/systemd/system
 
-.PHONY: test install probe install-probe install-systemd uninstall
+.PHONY: test install probe install-probe install-systemd install-cache-systemd uninstall
 
 test:
 	ruby -Ilib -Itests tests/run.rb
@@ -34,8 +34,17 @@ install-systemd:
 	install -m 0644 systemd/one-nhc-controller.timer $(DESTDIR)$(SYSTEMD)/
 	@echo "Run: systemctl daemon-reload && systemctl enable --now one-nhc-controller.timer"
 
+# Hypervisors: timer that refreshes the heavy-check cache (smart, gpu).
+install-cache-systemd:
+	install -d $(DESTDIR)$(SYSTEMD)
+	install -m 0644 systemd/one-nhc-cache.service $(DESTDIR)$(SYSTEMD)/
+	install -m 0644 systemd/one-nhc-cache.timer $(DESTDIR)$(SYSTEMD)/
+	@echo "Run: systemctl daemon-reload && systemctl enable --now one-nhc-cache.timer"
+
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/one-nhc
 	rm -rf $(DESTDIR)$(LIBDIR)
 	rm -f $(DESTDIR)$(SYSTEMD)/one-nhc-controller.service
 	rm -f $(DESTDIR)$(SYSTEMD)/one-nhc-controller.timer
+	rm -f $(DESTDIR)$(SYSTEMD)/one-nhc-cache.service
+	rm -f $(DESTDIR)$(SYSTEMD)/one-nhc-cache.timer

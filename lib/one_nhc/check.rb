@@ -12,9 +12,10 @@ module OneNHC
   #     ctx.ok!("all good")
   #   end
   class Check
-    attr_reader :id, :description, :severity, :timeout, :tags
+    attr_reader :id, :description, :severity, :timeout, :tags, :heavy, :ttl
 
-    def initialize(id:, description: "", severity: :crit, timeout: 5, tags: [], &block)
+    def initialize(id:, description: "", severity: :crit, timeout: 5, tags: [],
+                   heavy: false, ttl: 0, &block)
       raise ArgumentError, "check requires a block" unless block
 
       @id          = id.to_s
@@ -22,7 +23,14 @@ module OneNHC
       @severity    = severity
       @timeout     = Integer(timeout)
       @tags        = Array(tags)
+      @heavy       = !!heavy
+      @ttl         = Integer(ttl)
+      @ttl         = 1800 if @heavy && @ttl.zero?
       @block       = block
+    end
+
+    def heavy?
+      @heavy
     end
 
     def enabled?(config)

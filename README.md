@@ -63,6 +63,11 @@ cd opennebula-nhc
 # On every hypervisor and on the frontend:
 sudo make install
 
+# On every hypervisor: refresh the heavy checks (smart, gpu) every 15 minutes
+sudo make install-cache-systemd
+sudo systemctl daemon-reload
+sudo systemctl enable --now one-nhc-cache.timer
+
 # On the frontend (installs the wrapper in the IM remotes):
 sudo make probe
 
@@ -107,16 +112,33 @@ loop instead, run `one-nhc controller --watch`.
 | `infiniband`       | crit     | IB port down, rate below the minimum or firmware mismatch  |
 | `service`          | crit     | configured systemd units or processes not running          |
 | `raid`             | crit     | software RAID (`md`) array degraded or failed              |
-| `gpu`              | crit     | NVIDIA GPU count or Fabric state/status not healthy        |
+| `smart`            | crit     | SMART health of configured disks (heavy, cached)           |
+| `gpu`              | crit     | NVIDIA GPU count or Fabric state/status not healthy (cached) |
 | `package-version`  | crit     | installed package version does not match the expected one  |
 
 Statuses: `OK`, `WARN`, `CRIT`, `SKIP` (not applicable) and `UNKNOWN` (could not
 determine). `SKIP` never triggers a quarantine.
 
 The optional checks (`fs-usage`, `network-interface`, `infiniband`, `service`,
-`raid`, `gpu`, `package-version`) are **disabled by default** and have commented
-examples in `etc/one-nhc.conf`. Use `hosts:`/`exclude:` to enable them only on
-the relevant nodes.
+`raid`, `smart`, `gpu`, `package-version`) are **disabled by default** and have
+commented examples in `etc/one-nhc.conf`. Use `hosts:`/`exclude:` to enable them
+only on the relevant nodes.
+
+### Heavy checks and cache
+
+`smart` and `gpu` are heavy: they declare a TTL and the probe **does not run
+them**. The probe reads the cache file (default
+`/var/lib/one-nhc/cache.json`); `one-nhc cache` runs the heavy checks and writes
+it atomically, and `one-nhc-cache.timer` refreshes it every 15 minutes.
+
+If the cache entry is missing or stale, the probe reports `UNKNOWN`, never
+`CRIT`, so a missing timer cannot quarantine a host. `one-nhc check` still runs
+the heavy checks on demand, and `one-nhc cache --quiet` refreshes the cache
+without printing anything.
+
+`smartctl` often needs root. If the disks are not readable as `oneadmin`, set
+`smart.sudo: true` and add a sudoers rule for `smartctl`, or the check reports
+`UNKNOWN` instead of a false `CRIT`.
 
 ## Configuration
 

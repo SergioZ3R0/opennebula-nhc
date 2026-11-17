@@ -7,6 +7,8 @@ OneNHC.check(
   description: "NVIDIA GPUs present and GPU Fabric healthy",
   severity: :crit,
   timeout: 30,
+  heavy: true,
+  ttl: 1800,
   tags: %w[hardware gpu]
 ) do |ctx|
   options  = ctx.config.check("gpu")

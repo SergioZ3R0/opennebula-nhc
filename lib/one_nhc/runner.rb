@@ -7,14 +7,20 @@ module OneNHC
   class Runner
     attr_reader :config, :node
 
-    def initialize(config, only: nil, node: nil)
+    def initialize(config, only: nil, node: nil, cache: nil)
       @config = config
       @only   = only && Array(only).map(&:to_s)
       @node   = node || OneNHC.node_name
+      @cache  = cache
     end
 
-    def results
-      selected.map { |check| check.call(@config) }
+    def results(use_cache: false)
+      selected.map { |check| run(check, use_cache: use_cache) }
+    end
+
+    # Runs only the heavy checks, for `one-nhc cache`.
+    def heavy_results
+      selected.select(&:heavy?).map { |check| check.call(@config) }
     end
 
     # Checks enabled and targeted at this node.
@@ -38,7 +44,7 @@ module OneNHC
     # are reported as SKIP so the Monitoring Information does not keep a stale
     # value from a previous run.
     def probe_results
-      executed = results
+      executed = results(use_cache: true)
       return executed unless @config["report_not_targeted"]
 
       skipped = not_targeted.map do |check|
@@ -74,6 +80,19 @@ module OneNHC
     end
 
     private
+
+    def run(check, use_cache:)
+      return check.call(@config) unless use_cache && check.heavy?
+
+      cached = @cache&.result(check.id, ttl: check.ttl)
+      return cached if cached
+
+      Result.new(
+        check_id: check.id,
+        status: :unknown,
+        message: "heavy check cache missing or stale"
+      )
+    end
 
     def targeted?(check)
       check.targets_host?(@config, @node)

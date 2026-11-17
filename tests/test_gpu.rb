@@ -21,6 +21,11 @@ class TestGpu < Minitest::Test
     )
   end
 
+  def test_is_a_heavy_check
+    assert check.heavy?
+    assert_equal 1800, check.ttl
+  end
+
   def list_output(count)
     (0...count).map { |i| "GPU #{i}: NVIDIA A100 (UUID: GPU-#{i})\n" }.join
   end

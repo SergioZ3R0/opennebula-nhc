@@ -13,6 +13,7 @@ module OneNHC
       "node_name" => nil,
       "groups" => {},
       "report_not_targeted" => false,
+      "cache_file" => "/var/lib/one-nhc/cache.json",
       "controller" => {
         "mode" => "monitor",
         "dry_run" => false,
@@ -76,6 +77,13 @@ module OneNHC
           "enabled" => false,
           "sysfs" => "/sys/block",
           "mdstat" => "/proc/mdstat"
+        },
+        "smart" => {
+          "enabled" => false,
+          "required" => false,
+          "timeout" => 15,
+          "sudo" => false,
+          "devices" => []
         },
         "gpu" => {
           "enabled" => false,

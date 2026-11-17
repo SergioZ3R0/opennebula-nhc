@@ -19,6 +19,7 @@ require "optparse"
 
 DEFAULT_CONFIG = "/etc/one-nhc/one-nhc.conf"
 DEFAULT_STATE  = "/var/lib/one-nhc/state.json"
+DEFAULT_CACHE  = "/var/lib/one-nhc/cache.json"
 
 def usage
   <<~USAGE
@@ -27,6 +28,7 @@ def usage
     Usage:
       one-nhc check       [options]   run checks and print a human report
       one-nhc probe       [options]   run checks and print OpenNebula IM attributes
+      one-nhc cache       [options]   run heavy checks and write the cache
       one-nhc controller  [options]   evaluate hosts and apply the configured mode
       one-nhc notify-test [options]   send a test email using controller.notify.email
       one-nhc list                    list available checks
@@ -43,6 +45,7 @@ def usage
           --mode MODE      controller mode: monitor, notify or act
           --dry-run        log controller decisions without changing hosts
           --state FILE     controller state file (default: #{DEFAULT_STATE})
+          --cache FILE     heavy-check cache file (default: #{DEFAULT_CACHE})
           --to EMAIL       override the email recipient (notify-test)
       -q, --quiet          suppress the controller's "no action needed" message
       -h, --help           show this help
@@ -60,6 +63,7 @@ options = {
   mode: nil,
   dry_run: nil,
   state: nil,
+  cache: nil,
   quiet: false,
   to: nil
 }
@@ -75,6 +79,7 @@ parser = OptionParser.new do |opts|
   opts.on("--mode MODE") { |value| options[:mode] = value }
   opts.on("--dry-run") { options[:dry_run] = true }
   opts.on("--state FILE") { |value| options[:state] = value }
+  opts.on("--cache FILE") { |value| options[:cache] = value }
   opts.on("--to EMAIL") { |value| options[:to] = value }
   opts.on("-q", "--quiet") { options[:quiet] = true }
   opts.on("-h", "--help") { puts usage; exit 0 }
@@ -84,12 +89,18 @@ parser.parse!(ARGV)
 command = ARGV.shift
 OneNHC.load_checks
 
-def build_runner(options)
+def cache_file(config, options)
+  path = options[:cache] || config["cache_file"] || DEFAULT_CACHE
+  path.to_s.strip.empty? ? DEFAULT_CACHE : path
+end
+
+def build_runner(options, cache: false)
   config = OneNHC::Config.load(options[:config])
   config.validate!
 
-  node = options[:node] || config["node_name"] || OneNHC.node_name
-  [config, OneNHC::Runner.new(config, only: options[:only], node: node)]
+  node   = options[:node] || config["node_name"] || OneNHC.node_name
+  cached = cache ? OneNHC::Cache.new(cache_file(config, options)) : nil
+  [config, OneNHC::Runner.new(config, only: options[:only], node: node, cache: cached)]
 end
 
 def controller_state_file(config, options)
@@ -218,8 +229,24 @@ begin
 
     exit OneNHC::Runner.exit_code(results)
   when "probe"
-    _config, runner = build_runner(options)
+    _config, runner = build_runner(options, cache: true)
     print OneNHC::Adapters::OnMonitor.render(runner.probe_results)
+  when "cache"
+    config, runner = build_runner(options, cache: true)
+    results = runner.heavy_results
+    OneNHC::Cache.new(cache_file(config, options)).write(results, host: runner.node)
+
+    if options[:json]
+      puts JSON.generate(results.map(&:to_h))
+    elsif !options[:quiet]
+      if results.empty?
+        puts "[one-nhc] no heavy checks targeted on #{runner.node}"
+      else
+        print OneNHC::Adapters::Human.render(results)
+      end
+    end
+
+    exit OneNHC::Runner.exit_code(results)
   when "controller"
     config     = OneNHC::Config.load(options[:config])
     config.validate!
@@ -254,7 +281,10 @@ begin
     config.validate!
     run_notify_test(config, options)
   when "list"
-    OneNHC.checks.each { |check| puts format("%-24s %s", check.id, check.description) }
+    OneNHC.checks.each do |check|
+      tag = check.heavy? ? "[heavy]" : ""
+      puts format("%-24s %-8s %s", check.id, tag, check.description)
+    end
   when "version", "-V", "--version"
     puts OneNHC::VERSION
   when nil
@@ -277,7 +307,7 @@ rescue LoadError => e
   warn "one-nhc: the controller needs the OpenNebula Ruby bindings: #{e.message}"
   exit 1
 rescue StandardError => e
-  raise unless %w[controller notify-test].include?(command)
+  raise unless %w[controller notify-test cache].include?(command)
 
   warn "one-nhc: #{command} failed: #{e.class}: #{e.message}"
   exit 1

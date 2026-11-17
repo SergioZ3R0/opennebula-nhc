@@ -25,13 +25,17 @@ The wrapper `probes/kvm-probes.d/host/system/one_nhc.rb` delegates to the binary
 installed in the frontend remotes and synced to the hosts with `onehost sync`.
 
 The probe must be fast because it runs on every monitoring cycle. Heavy checks
-(SMART, RAID scrub, NFS write test) will run from a timer (M2) and the probe
-will read their cached result.
+(`smart`, `gpu`) declare `heavy: true` and a TTL: the probe reads
+`/var/lib/one-nhc/cache.json`, `one-nhc cache` runs them and writes the cache
+atomically, and the `one-nhc-cache.timer` refreshes it. A missing or stale entry
+is reported as `UNKNOWN`, never `CRIT`, so a missing timer cannot quarantine a
+host.
 
 ### CLI
 
-`one-nhc check` prints the human report. `--json` is meant for automation,
-`--only` selects checks and `-c` picks a configuration file.
+`one-nhc check` prints the human report and runs heavy checks on demand.
+`one-nhc cache` refreshes the heavy-check cache. `--json` is meant for
+automation, `--only` selects checks and `-c` picks a configuration file.
 
 ### Controller (frontend)
 
