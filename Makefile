@@ -5,7 +5,7 @@ PREFIX ?= /usr/local
 LIBDIR ?= $(PREFIX)/lib/one-nhc
 BINDIR ?= $(PREFIX)/bin
 CONFDIR ?= /etc/one-nhc
-ON_REMOTES ?= /var/lib/one/remotes/im/kvm-probes.d/host
+ON_REMOTES ?= /var/lib/one/remotes/im/kvm-probes.d/host/system
 
 .PHONY: test install probe install-probe uninstall
 
@@ -23,7 +23,7 @@ install:
 
 probe: install
 	install -d $(DESTDIR)$(ON_REMOTES)
-	install -m 0755 probes/kvm-probes.d/host/one_nhc.rb \
+	install -m 0755 probes/kvm-probes.d/host/system/one_nhc.rb \
 		$(DESTDIR)$(ON_REMOTES)/one_nhc.rb
 
 uninstall:

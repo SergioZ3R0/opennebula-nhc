@@ -68,4 +68,33 @@ class TestTargeting < Minitest::Test
     )
     assert cfg.validate!
   end
+
+  def test_probe_results_omit_not_targeted_by_default
+    cfg = config(
+      "fs-ro" => { "enabled" => true, "hosts" => "node01" },
+      "datastore-mounts" => { "enabled" => true, "hosts" => "node01" },
+      "libvirt" => { "enabled" => true, "hosts" => "node01" }
+    )
+    runner = OneNHC::Runner.new(cfg, node: "node02")
+
+    assert_empty runner.probe_results
+  end
+
+  def test_probe_results_report_not_targeted_when_enabled
+    cfg = OneNHC::Config.new(
+      "report_not_targeted" => true,
+      "groups" => {},
+      "checks" => {
+        "fs-ro" => { "enabled" => true, "hosts" => "node01" },
+        "datastore-mounts" => { "enabled" => true, "hosts" => "node01" },
+        "libvirt" => { "enabled" => true, "hosts" => "node01" }
+      }
+    )
+    runner = OneNHC::Runner.new(cfg, node: "node02")
+    results = runner.probe_results
+
+    assert_equal 3, results.size
+    assert results.all? { |result| result.status == :skip }
+    assert_includes results.first.message, "not targeted on node02"
+  end
 end

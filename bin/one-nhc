@@ -80,7 +80,7 @@ begin
     exit OneNHC::Runner.exit_code(results)
   when "probe"
     _config, runner = build_runner(options)
-    print OneNHC::Adapters::OnMonitor.render(runner.results)
+    print OneNHC::Adapters::OnMonitor.render(runner.probe_results)
   when "list"
     OneNHC.checks.each { |check| puts format("%-24s %s", check.id, check.description) }
   when "version", "-V", "--version"

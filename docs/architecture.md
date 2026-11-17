@@ -20,7 +20,7 @@ NHC_DATASTORE_MOUNTS="CRIT"
 NHC_DATASTORE_MOUNTS_MSG="/var/lib/one/datastores missing"
 ```
 
-The wrapper `probes/kvm-probes.d/host/one_nhc.rb` delegates to the binary. It is
+The wrapper `probes/kvm-probes.d/host/system/one_nhc.rb` delegates to the binary. It is
 installed in the frontend remotes and synced to the hosts with `onehost sync`.
 
 The probe must be fast because it runs on every monitoring cycle. Heavy checks
@@ -76,6 +76,10 @@ The probe evaluates the expression against the local node name (the short
 hostname, `node_name` in the config, or the `ONE_NHC_NODE` environment
 variable). A check that is not targeted is not executed and not reported, so
 monitoring does not fill with `SKIP` for checks that do not apply.
+
+Monitoring attributes persist until `HOST_MONITORING_EXPIRATION_TIME`. When
+targeting changes, set `report_not_targeted: true` to emit
+`NHC_<ID>="SKIP"` with a "not targeted" message and clear the previous value.
 
 ## Status mapping
 

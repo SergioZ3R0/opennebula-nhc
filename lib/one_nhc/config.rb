@@ -11,6 +11,7 @@ module OneNHC
       "proc_mounts" => "/proc/mounts",
       "node_name" => nil,
       "groups" => {},
+      "report_not_targeted" => false,
       "checks" => {
         "fs-ro" => {
           "enabled" => true,

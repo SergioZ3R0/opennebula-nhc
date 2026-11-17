@@ -33,6 +33,25 @@ module OneNHC
       end
     end
 
+    # Results for the probe. By default it returns only the executed checks.
+    # When report_not_targeted is true, checks that are enabled but not targeted
+    # are reported as SKIP so the Monitoring Information does not keep a stale
+    # value from a previous run.
+    def probe_results
+      executed = results
+      return executed unless @config["report_not_targeted"]
+
+      skipped = not_targeted.map do |check|
+        Result.new(
+          check_id: check.id,
+          status: :skip,
+          message: "not targeted on #{node}"
+        )
+      end
+
+      executed + skipped
+    end
+
     # Worst status across results: crit > warn > unknown > ok.
     # `skip` is ignored unless every result was skipped.
     def self.worst(results)

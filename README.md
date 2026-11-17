@@ -30,7 +30,7 @@ the classic HPC Node Health Check (NHC) and designed to plug into OpenNebula:
 | one-nhc probe               |        | one-nhc controller (M2)      |
 |  checks.d/*.rb              |  MON   |  reads NHC_STATUS from       |
 |  -> NHC_STATUS="..."        | -----> |  onehost show, hysteresis,   |
-|  (kvm-probes.d/host)        |        |  onehost disable/enable      |
+|  (kvm-probes.d/host/system)        |        |  onehost disable/enable      |
 +-----------------------------+        +------------------------------+
 ```
 
@@ -58,17 +58,23 @@ cd opennebula-nhc
 ## Install
 
 ```bash
-sudo make install   # /usr/local/bin/one-nhc, /usr/local/lib/one-nhc, /etc/one-nhc
-sudo make probe     # installs the IM probe wrapper
-```
+# On every hypervisor and on the frontend:
+sudo make install
 
-Then, on the OpenNebula frontend:
+# On the frontend (installs the wrapper in the IM remotes):
+sudo make probe
 
-```bash
-onehost sync --admin
-# attributes appear after the next monitoring cycle
+# On the frontend: push the wrapper to the hosts
+onehost sync --force --ssh
+
+# Optional: refresh the host monitoring now
+onehost forceupdate <host-id>
 onehost show <host-id> | grep NHC_
 ```
+
+The wrapper lives in `kvm-probes.d/host/system`, so attributes refresh on the
+`SYSTEM_HOST` cycle (600s by default). Lower it in `/etc/one/monitord.conf`
+(for example `SYSTEM_HOST = 120`) if you need faster health checks.
 
 ## Checks
 
@@ -138,6 +144,11 @@ A check that is not targeted at the local host is **not executed and not
 reported**, so monitoring does not fill with `SKIP` for checks that do not
 apply. Use `one-nhc check --node node05` to evaluate another host and
 `one-nhc list` to list the available checks.
+
+Monitoring attributes persist until `HOST_MONITORING_EXPIRATION_TIME`, so if
+you change the targeting of a check that already ran, set
+`report_not_targeted: true` to emit `NHC_<ID>="SKIP"` (with a "not targeted"
+message) and clear the stale value immediately.
 
 The local node name is the short hostname by default. Override it with
 `node_name:` in the config or the `ONE_NHC_NODE` environment variable when the
