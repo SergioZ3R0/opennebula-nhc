@@ -10,11 +10,23 @@ require "uri"
 module OneNHC
   # Sends controller decisions to a command, a webhook and/or email.
   class Notifier
-    def initialize(config)
+    # HTTP statuses that are worth retrying even though they are client errors.
+    RETRYABLE_STATUS = [408, 429].freeze
+    MAX_RETRY_AFTER  = 30
+
+    def initialize(config, clock: nil, sleeper: nil)
       notify   = config.dig("controller", "notify") || {}
       @command = notify["command"].to_s
       @webhook = notify["webhook"].to_s
-      @email   = build_email(notify["email"])
+
+      @webhook_retries      = (notify["webhook_retries"] || 2).to_i
+      @webhook_retry_delay  = (notify["webhook_retry_delay"] || 1).to_f
+      @webhook_min_interval = (notify["webhook_min_interval"] || 0.2).to_f
+
+      @clock            = clock || -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
+      @sleeper          = sleeper || ->(seconds) { sleep(seconds) }
+      @last_webhook_at  = nil
+      @email            = build_email(notify["email"])
     end
 
     def notify(message, host:, decision:)
@@ -60,6 +72,32 @@ module OneNHC
     end
 
     def post_webhook(payload)
+      attempts = @webhook_retries + 1
+      attempt  = 0
+
+      loop do
+        attempt += 1
+        throttle_webhook
+
+        ok, retryable, reason, retry_after = deliver_webhook(payload)
+        return if ok
+
+        if !retryable || attempt >= attempts
+          warn "one-nhc: webhook failed after #{attempt} attempt(s): #{reason}"
+          return
+        end
+
+        delay = retry_after || webhook_backoff(attempt)
+        warn format(
+          "one-nhc: webhook attempt %d failed (%s), retrying in %.1fs",
+          attempt, reason, delay
+        )
+        @sleeper.call(delay) if delay.positive?
+      end
+    end
+
+    # Returns [ok, retryable, reason, retry_after_seconds].
+    def deliver_webhook(payload)
       uri  = URI.parse(@webhook)
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl      = uri.scheme == "https"
@@ -71,11 +109,42 @@ module OneNHC
       request.body = JSON.generate(payload)
 
       response = http.request(request)
-      return if response.is_a?(Net::HTTPSuccess)
+      return [true, false, nil, nil] if response.is_a?(Net::HTTPSuccess)
 
-      warn "one-nhc: webhook returned HTTP #{response.code}"
+      code      = response.code.to_i
+      retryable = response.is_a?(Net::HTTPServerError) ||
+                  RETRYABLE_STATUS.include?(code)
+      retry_after = retry_after_seconds(response) if code == 429
+
+      [false, retryable, "HTTP #{response.code}", retry_after]
     rescue StandardError => e
-      warn "one-nhc: webhook failed: #{e.message}"
+      [false, true, "#{e.class}: #{e.message}", nil]
+    end
+
+    # Respect Retry-After on 429, but never sleep for an unbounded time.
+    def retry_after_seconds(response)
+      value = response["Retry-After"].to_s
+      return nil unless value.match?(/\A\d+(\.\d+)?\z/)
+
+      [value.to_f, MAX_RETRY_AFTER].min
+    end
+
+    def webhook_backoff(attempt)
+      @webhook_retry_delay * (2**(attempt - 1))
+    end
+
+    # Rate limit by minimum interval between POST starts. It applies within one
+    # controller run, which is where many hosts can fail at once.
+    def throttle_webhook
+      return if @webhook_min_interval <= 0
+
+      now = @clock.call
+      if @last_webhook_at
+        wait = @webhook_min_interval - (now - @last_webhook_at)
+        @sleeper.call(wait) if wait.positive?
+      end
+
+      @last_webhook_at = @clock.call
     end
 
     def deliver_email(payload)

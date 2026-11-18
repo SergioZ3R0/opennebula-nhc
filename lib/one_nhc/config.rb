@@ -39,6 +39,9 @@ module OneNHC
         "notify" => {
           "command" => nil,
           "webhook" => nil,
+          "webhook_retries" => 2,
+          "webhook_retry_delay" => 1,
+          "webhook_min_interval" => 0.2,
           "email" => nil
         }
       },
@@ -319,7 +322,38 @@ module OneNHC
         end
       end
 
+      validate_webhook_options!(notify)
+
       validate_email!(notify["email"]) unless notify["email"].nil?
+    end
+
+    def validate_webhook_options!(notify)
+      retries = notify["webhook_retries"]
+      unless retries.nil?
+        value = webhook_number("webhook_retries", retries, integer: true)
+        if value.negative?
+          raise ArgumentError,
+                "controller.notify.webhook_retries must be >= 0"
+        end
+      end
+
+      %w[webhook_retry_delay webhook_min_interval].each do |key|
+        value = notify[key]
+        next if value.nil?
+
+        number = webhook_number(key, value)
+        if number.negative?
+          raise ArgumentError, "controller.notify.#{key} must be >= 0"
+        end
+      end
+    end
+
+    def webhook_number(key, value, integer: false)
+      integer ? Integer(value) : Float(value)
+    rescue ArgumentError, TypeError
+      kind = integer ? "an integer" : "a number"
+      raise ArgumentError,
+            "controller.notify.#{key} must be #{kind} (got '#{value}')"
     end
 
     def validate_email!(email)

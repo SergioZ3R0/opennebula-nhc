@@ -83,7 +83,10 @@ file next to it keeps a single controller per state, so the systemd timer and a
 manual `--watch` cannot run at the same time. The systemd timer runs `--once
 --quiet` every two minutes; `--watch` runs the same loop in the foreground.
 
-Notifications go to a command, a JSON webhook and/or email. The email body is
+Notifications go to a command, a JSON webhook and/or email. The webhook is a
+POST with the shared payload; it retries transient failures (connection errors,
+timeouts, `5xx`, `429`) with exponential backoff and spaces requests within a
+controller run to avoid flooding the receiver. The email body is
 rendered from the host `NHC_*` attributes (summary counts and the failed
 checks) as HTML plus a plain-text alternative. Email uses either an
 authenticated SMTP relay (credentials from `password_file` or `password_env`,

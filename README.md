@@ -328,8 +328,28 @@ The command receives:
 | `NHC_APPLIED` | `true` when the action was applied |
 
 The webhook receives a JSON object with the same fields plus `time`, `sample`,
-`cluster` and `details` (the host `NHC_*` attributes). Failures are logged and
+`cluster`, `details` (the host `NHC_*` attributes) and `check_tags`. It is
+sent with a POST and `Content-Type: application/json`.
+
+```yaml
+controller:
+  notify:
+    webhook: https://hooks.example.com/services/XXX
+    webhook_retries: 2          # extra attempts after the first (0 = no retry)
+    webhook_retry_delay: 1      # base seconds; doubles after each failure
+    webhook_min_interval: 0.2   # minimum seconds between POSTs (0 = no limit)
+```
+
+Retries apply to connection errors, timeouts, `5xx` and `429`. A `429` with a
+numeric `Retry-After` is respected (capped at 30 s). Other `4xx` responses are
+not retried. The rate limit is per controller run: if many hosts fail in the
+same cycle, POSTs are spaced by `webhook_min_interval`. Failures are logged and
 never abort the controller cycle.
+
+Note that one-nhc sends its own JSON, not the format expected by Slack, Teams
+or Discord incoming webhooks. For those, use a small relay or a `notify.command`
+that maps the payload, or point the webhook at an automation tool (n8n,
+Node-RED, AWX) and transform it there.
 
 #### Email
 

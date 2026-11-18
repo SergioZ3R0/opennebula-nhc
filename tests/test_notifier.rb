@@ -22,6 +22,46 @@ class TestNotifier < Minitest::Test
     end
   end
 
+  # Minimal Net::HTTP double. The block receives the attempt number.
+  class FakeHTTP
+    attr_accessor :use_ssl, :open_timeout, :read_timeout
+    attr_reader :requests
+
+    def initialize(&block)
+      @block    = block
+      @requests = 0
+    end
+
+    def request(_request)
+      @requests += 1
+      @block.call(@requests)
+    end
+  end
+
+  class FakeClock
+    attr_reader :value
+
+    def initialize
+      @value = 0.0
+    end
+
+    def call
+      @value
+    end
+
+    def advance(seconds)
+      @value += seconds
+    end
+  end
+
+  def ok_response
+    Net::HTTPOK.new("1.1", "200", "OK")
+  end
+
+  def error_response(klass, code)
+    klass.new("1.1", code.to_s, "error")
+  end
+
   def host
     OneNHC::HostView.new(
       id: 1,
@@ -111,5 +151,196 @@ class TestNotifier < Minitest::Test
 
     assert_includes output, "email notifications disabled"
     assert_includes output, "missing password"
+  end
+
+  def webhook_config(overrides = {})
+    defaults = OneNHC::Config::DEFAULTS["controller"]
+    notify = {
+      "webhook" => "https://hooks.example.com/services/test",
+      "email" => nil
+    }.merge(overrides)
+
+    OneNHC::Config.new(
+      "groups" => {},
+      "checks" => {},
+      "controller" => defaults.merge("notify" => notify)
+    )
+  end
+
+  def silent_stderr
+    old_stderr = $stderr
+    $stderr = StringIO.new
+    yield
+  ensure
+    $stderr = old_stderr
+  end
+
+  def test_webhook_retries_server_errors
+    http  = FakeHTTP.new do |attempt|
+      attempt < 3 ? error_response(Net::HTTPInternalServerError, 500) : ok_response
+    end
+    clock = FakeClock.new
+    slept = []
+    cfg   = webhook_config(
+      "webhook_retries" => 2,
+      "webhook_retry_delay" => 0.5,
+      "webhook_min_interval" => 0
+    )
+
+    notifier = OneNHC::Notifier.new(
+      cfg, clock: clock, sleeper: ->(seconds) { slept << seconds; clock.advance(seconds) }
+    )
+
+    with_stub(Net::HTTP, :new, http) do
+      silent_stderr do
+        notifier.notify("msg", host: host, decision: decision)
+      end
+    end
+
+    assert_equal 3, http.requests
+    assert_equal [0.5, 1.0], slept
+  end
+
+  def test_webhook_does_not_retry_client_errors
+    http  = FakeHTTP.new { error_response(Net::HTTPBadRequest, 400) }
+    slept = []
+    cfg   = webhook_config(
+      "webhook_retries" => 2,
+      "webhook_retry_delay" => 0.5,
+      "webhook_min_interval" => 0
+    )
+
+    notifier = OneNHC::Notifier.new(
+      cfg, clock: FakeClock.new, sleeper: ->(seconds) { slept << seconds }
+    )
+
+    with_stub(Net::HTTP, :new, http) do
+      silent_stderr do
+        notifier.notify("msg", host: host, decision: decision)
+      end
+    end
+
+    assert_equal 1, http.requests
+    assert_empty slept
+  end
+
+  def test_webhook_retries_connection_errors
+    http = FakeHTTP.new do |attempt|
+      raise Errno::ECONNREFUSED, "boom" if attempt == 1
+
+      ok_response
+    end
+    slept = []
+    cfg   = webhook_config(
+      "webhook_retries" => 1,
+      "webhook_retry_delay" => 0.2,
+      "webhook_min_interval" => 0
+    )
+
+    notifier = OneNHC::Notifier.new(
+      cfg, clock: FakeClock.new, sleeper: ->(seconds) { slept << seconds }
+    )
+
+    with_stub(Net::HTTP, :new, http) do
+      silent_stderr do
+        notifier.notify("msg", host: host, decision: decision)
+      end
+    end
+
+    assert_equal 2, http.requests
+    assert_equal [0.2], slept
+  end
+
+  def test_webhook_gives_up_after_retries
+    http = FakeHTTP.new { error_response(Net::HTTPInternalServerError, 500) }
+    cfg  = webhook_config(
+      "webhook_retries" => 1,
+      "webhook_retry_delay" => 0,
+      "webhook_min_interval" => 0
+    )
+
+    notifier = OneNHC::Notifier.new(cfg, clock: FakeClock.new, sleeper: ->(_) {})
+
+    with_stub(Net::HTTP, :new, http) do
+      silent_stderr do
+        notifier.notify("msg", host: host, decision: decision)
+      end
+    end
+
+    assert_equal 2, http.requests
+  end
+
+  def test_webhook_respects_retry_after_on_429
+    http = FakeHTTP.new do |attempt|
+      if attempt == 1
+        response = error_response(Net::HTTPTooManyRequests, 429)
+        response["Retry-After"] = "3"
+        response
+      else
+        ok_response
+      end
+    end
+    slept = []
+    cfg   = webhook_config(
+      "webhook_retries" => 1,
+      "webhook_retry_delay" => 0.5,
+      "webhook_min_interval" => 0
+    )
+
+    notifier = OneNHC::Notifier.new(
+      cfg, clock: FakeClock.new, sleeper: ->(seconds) { slept << seconds }
+    )
+
+    with_stub(Net::HTTP, :new, http) do
+      silent_stderr do
+        notifier.notify("msg", host: host, decision: decision)
+      end
+    end
+
+    assert_equal 2, http.requests
+    assert_equal [3.0], slept
+  end
+
+  def test_webhook_rate_limit_waits_between_notifications
+    http  = FakeHTTP.new { ok_response }
+    clock = FakeClock.new
+    slept = []
+    cfg   = webhook_config(
+      "webhook_retries" => 0,
+      "webhook_min_interval" => 1.0
+    )
+
+    notifier = OneNHC::Notifier.new(
+      cfg, clock: clock, sleeper: ->(seconds) { slept << seconds; clock.advance(seconds) }
+    )
+
+    with_stub(Net::HTTP, :new, http) do
+      notifier.notify("one", host: host, decision: decision)
+      notifier.notify("two", host: host, decision: decision)
+    end
+
+    assert_equal 2, http.requests
+    assert_equal [1.0], slept
+  end
+
+  def test_webhook_rate_limit_can_be_disabled
+    http  = FakeHTTP.new { ok_response }
+    slept = []
+    cfg   = webhook_config(
+      "webhook_retries" => 0,
+      "webhook_min_interval" => 0
+    )
+
+    notifier = OneNHC::Notifier.new(
+      cfg, clock: FakeClock.new, sleeper: ->(seconds) { slept << seconds }
+    )
+
+    with_stub(Net::HTTP, :new, http) do
+      notifier.notify("one", host: host, decision: decision)
+      notifier.notify("two", host: host, decision: decision)
+    end
+
+    assert_equal 2, http.requests
+    assert_empty slept
   end
 end

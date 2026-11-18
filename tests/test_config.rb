@@ -132,6 +132,39 @@ class TestConfig < Minitest::Test
     assert_includes error.message, "webhook"
   end
 
+  def test_accepts_webhook_retry_and_rate_limit_options
+    cfg = config(
+      "notify" => {
+        "webhook" => "https://hooks.example.com/services/XXX",
+        "webhook_retries" => 3,
+        "webhook_retry_delay" => 0.5,
+        "webhook_min_interval" => 0.1
+      }
+    )
+    assert cfg.validate!
+  end
+
+  def test_rejects_negative_webhook_retries
+    error = assert_raises(ArgumentError) do
+      config("notify" => { "webhook_retries" => -1 }).validate!
+    end
+    assert_includes error.message, "webhook_retries"
+  end
+
+  def test_rejects_non_numeric_webhook_delay
+    error = assert_raises(ArgumentError) do
+      config("notify" => { "webhook_retry_delay" => "soon" }).validate!
+    end
+    assert_includes error.message, "webhook_retry_delay"
+  end
+
+  def test_rejects_negative_webhook_interval
+    error = assert_raises(ArgumentError) do
+      config("notify" => { "webhook_min_interval" => -1 }).validate!
+    end
+    assert_includes error.message, "webhook_min_interval"
+  end
+
   def email(overrides = {})
     {
       "to" => "ops@example.com",
