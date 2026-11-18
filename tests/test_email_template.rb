@@ -21,6 +21,55 @@ class TestEmailTemplate < Minitest::Test
     "NHC_LIBVIRT_MSG" => "libvirt ok (0 domain(s))"
   }.freeze
 
+  CHECK_TAGS = {
+    "fs-ro" => ["storage"],
+    "datastore-mounts" => ["storage"],
+    "libvirt" => ["compute"],
+    "fs-usage" => ["storage"],
+    "network-interface" => ["network"],
+    "infiniband" => %w[network hardware],
+    "service" => ["services"],
+    "raid" => %w[storage hardware],
+    "smart" => %w[storage hardware],
+    "gpu" => %w[hardware gpu],
+    "gpu-fabric" => %w[hardware gpu],
+    "package-version" => ["packages"]
+  }.freeze
+
+  ALL_DETAILS = {
+    "NHC_STATUS" => "CRIT",
+    "NHC_CHECK_COUNT" => "12",
+    "NHC_CRIT" => "1",
+    "NHC_WARN" => "0",
+    "NHC_OK" => "11",
+    "NHC_SKIP" => "0",
+    "NHC_UNKNOWN" => "0",
+    "NHC_FS_RO" => "OK",
+    "NHC_FS_RO_MSG" => "all real filesystems are read-write",
+    "NHC_DATASTORE_MOUNTS" => "OK",
+    "NHC_DATASTORE_MOUNTS_MSG" => "2 datastore mount(s) ok",
+    "NHC_LIBVIRT" => "OK",
+    "NHC_LIBVIRT_MSG" => "libvirt ok (4 domain(s))",
+    "NHC_FS_USAGE" => "OK",
+    "NHC_FS_USAGE_MSG" => "2 filesystem(s) ok",
+    "NHC_NETWORK_INTERFACE" => "OK",
+    "NHC_NETWORK_INTERFACE_MSG" => "3 interface(s) up",
+    "NHC_INFINIBAND" => "CRIT",
+    "NHC_INFINIBAND_MSG" => "mlx5_0/1 state DOWN (expected ACTIVE)",
+    "NHC_SERVICE" => "OK",
+    "NHC_SERVICE_MSG" => "2 service(s) active",
+    "NHC_RAID" => "OK",
+    "NHC_RAID_MSG" => "1 RAID array(s) healthy",
+    "NHC_SMART" => "OK",
+    "NHC_SMART_MSG" => "2 disk(s) SMART healthy",
+    "NHC_GPU" => "OK",
+    "NHC_GPU_MSG" => "4 GPU(s) present",
+    "NHC_GPU_FABRIC" => "OK",
+    "NHC_GPU_FABRIC_MSG" => "4 GPU(s) Fabric healthy",
+    "NHC_PACKAGE_VERSION" => "OK",
+    "NHC_PACKAGE_VERSION_MSG" => "1 package(s) at the expected version"
+  }.freeze
+
   def payload(overrides = {})
     {
       message: "host=node01 id=0 status=CRIT action=disable (notify): CRIT 1/1",
@@ -31,7 +80,8 @@ class TestEmailTemplate < Minitest::Test
       applied: false,
       time: "2026-11-17T20:00:00Z",
       sample: 1_794_942_477,
-      details: DETAILS
+      details: DETAILS,
+      check_tags: CHECK_TAGS
     }.merge(overrides)
   end
 
@@ -101,5 +151,50 @@ class TestEmailTemplate < Minitest::Test
   def test_applied_is_rendered_as_yes_or_no
     assert_includes OneNHC::EmailTemplate.text(payload(applied: true)), "Applied: yes"
     assert_includes OneNHC::EmailTemplate.text(payload(applied: false)), "Applied: no"
+  end
+
+  def test_grouped_html_has_sections_and_failures_first
+    html = OneNHC::EmailTemplate.html(
+      payload(details: ALL_DETAILS), group_by: "tags", failures_first: true
+    )
+
+    assert_includes html, "Compute"
+    assert_includes html, "Storage"
+    assert_includes html, "Network"
+    assert_includes html, "Services"
+    assert_includes html, "Packages"
+    assert_includes html, "Network 1/2"
+    assert_includes html, "infiniband"
+    assert_includes html, "mlx5_0/1 state DOWN (expected ACTIVE)"
+
+    assert_operator html.index("Network"), :<, html.index("infiniband")
+    assert_operator html.index("infiniband"), :<, html.index("network-interface")
+  end
+
+  def test_grouped_text_has_sections
+    text = OneNHC::EmailTemplate.text(
+      payload(details: ALL_DETAILS), group_by: "tags", failures_first: true
+    )
+
+    assert_includes text, "Groups:  Compute 3/3"
+    assert_includes text, "Storage 5/5"
+    assert_includes text, "Network 1/2"
+    assert_includes text, "Network:"
+    assert_includes text, "infiniband"
+  end
+
+  def test_group_by_none_keeps_the_flat_table
+    html = OneNHC::EmailTemplate.html(payload(details: ALL_DETAILS))
+
+    assert_includes html, ">Checks<"
+    refute_includes html, ">Compute<"
+  end
+
+  def test_failures_first_works_without_groups
+    html = OneNHC::EmailTemplate.html(
+      payload(details: ALL_DETAILS), failures_first: true
+    )
+
+    assert_operator html.index("infiniband"), :<, html.index("datastore-mounts")
   end
 end

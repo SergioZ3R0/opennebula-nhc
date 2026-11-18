@@ -320,7 +320,15 @@ controller:
       user: one-nhc@example.com
       password_file: /etc/one-nhc/smtp.password
       tls: starttls                # starttls | ssl | none
+      # group_by: none             # none (default) | tags
+      # failures_first: true       # CRIT/WARN/UNKNOWN before OK
 ```
+
+By default the checks table is flat (`group_by: none`). Set `group_by: tags` to
+group it by the check tags (Compute, Storage, Network, Services, Packages,
+Hardware, Other), with a `Group healthy/total` summary above the table and
+`failures_first` putting problems before OK inside each group. The flat layout
+is unchanged when grouping is not enabled.
 
 Never put the password in the YAML. Use `password_file` (recommended) or
 `password_env` (for a systemd `EnvironmentFile`). The password file must be

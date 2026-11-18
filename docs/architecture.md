@@ -78,7 +78,9 @@ checks) as HTML plus a plain-text alternative. Email uses either an
 authenticated SMTP relay (credentials from `password_file` or `password_env`,
 never from the YAML) or a local MTA through `transport: sendmail`, which needs
 no credentials. `one-nhc notify-test` sends a test message without waiting for
-a host failure.
+a host failure. The email can optionally group checks by tag
+(`group_by: tags`) and put failures first (`failures_first: true`); the default
+flat table is unchanged.
 
 When the controller applies an action (`act` mode, not `dry_run`), it can run
 post-action hooks (`on_disable`, `on_enable`, `on_reenable`). Hooks are external

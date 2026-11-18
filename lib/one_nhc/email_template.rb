@@ -31,30 +31,39 @@ module OneNHC
       "test" => "Test notification"
     }.freeze
 
-    def html(payload)
+    GROUP_ORDER = %w[compute storage network services packages hardware other].freeze
+
+    GROUP_LABELS = {
+      "compute" => "Compute",
+      "storage" => "Storage",
+      "network" => "Network",
+      "services" => "Services",
+      "packages" => "Packages",
+      "hardware" => "Hardware",
+      "other" => "Other"
+    }.freeze
+
+    def html(payload, group_by: "none", failures_first: false)
       details = payload[:details] || {}
       style   = style_for(payload[:status])
-      checks  = check_rows(details)
+      checks  = checks_data(details)
       summary = summary_text(details)
       sample  = sample_string(payload)
       error   = details["NHC_ERROR"].to_s
 
-      checks_section = if checks.empty?
-                         ""
-                       else
-                         <<~SECTION
-                           <div style="font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#6b7280;margin:24px 0 6px;">Checks</div>
-                           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;line-height:1.5;">
-                             #{checks}
-                           </table>
-                         SECTION
-                       end
+      checks_section = checks_html(
+        checks, payload[:check_tags] || {}, group_by, failures_first
+      )
 
       summary_html = if summary.empty?
                        ""
                      else
                        %(<div style="margin-top:14px;font-size:13px;color:#6b7280;">#{escape(summary)}</div>)
                      end
+
+      groups_html = groups_summary_html(
+        checks, payload[:check_tags] || {}, group_by
+      )
 
       sample_row = if sample
                      "<tr><td style=\"padding:6px 0;color:#6b7280;\">Probe sample</td><td style=\"padding:6px 0;color:#111827;\">#{escape(sample)}</td></tr>"
@@ -122,6 +131,7 @@ module OneNHC
                           #{sample_row}
                         </table>
                         #{summary_html}
+                        #{groups_html}
                         #{checks_section}
                         <div style="margin-top:18px;padding:14px 16px;background:#f9fafb;border-left:3px solid #{style[:accent]};border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.55;color:#111827;white-space:pre-wrap;">#{escape(payload[:message])}</div>
                         #{error_note}
@@ -142,8 +152,9 @@ module OneNHC
       HTML
     end
 
-    def text(payload)
+    def text(payload, group_by: "none", failures_first: false)
       details = payload[:details] || {}
+      checks  = checks_data(details)
       lines   = []
       lines << "one-nhc host health alert"
       lines << "========================="
@@ -161,14 +172,13 @@ module OneNHC
       lines << ""
       lines << "Summary: #{summary}" unless summary.empty?
 
-      checks = check_rows(details, html: false)
-      unless checks.empty?
-        lines << ""
-        lines << "Checks:"
-        checks.each do |check|
-          lines << format("  %-6s %-20s %s", check[:status], check[:id], check[:message])
-        end
-      end
+      groups = groups_summary_text(checks, payload[:check_tags] || {}, group_by)
+      lines << "Groups:  #{groups}" unless groups.empty?
+
+      check_lines = checks_text(
+        checks, payload[:check_tags] || {}, group_by, failures_first
+      )
+      lines.concat(check_lines) unless check_lines.empty?
 
       error = details["NHC_ERROR"].to_s
       lines << "" << "Probe error: #{error}" unless error.empty?
@@ -182,8 +192,8 @@ module OneNHC
       "#{lines.join("\n")}\n"
     end
 
-    def check_rows(details, html: true)
-      checks = details.reject do |key, _|
+    def checks_data(details)
+      details.reject do |key, _|
         SUMMARY_KEYS.include?(key) || key.end_with?("_MSG")
       end.map do |key, value|
         {
@@ -192,21 +202,127 @@ module OneNHC
           message: details["#{key}_MSG"].to_s
         }
       end.sort_by { |check| check[:id] }
+    end
 
-      return checks unless html
+    def group_for(check_id, check_tags)
+      tags = Array(check_tags[check_id]).map(&:to_s)
 
-      checks.map do |check|
-        style = style_for(check[:status])
-        <<~ROW
-          <tr>
-            <td style="padding:7px 0;width:86px;vertical-align:top;">
-              <span style="display:inline-block;padding:3px 8px;border-radius:999px;background:#{style[:bg]};color:#{style[:fg]};font-size:11px;font-weight:700;letter-spacing:0.04em;">#{escape(check[:status])}</span>
-            </td>
-            <td style="padding:7px 0;vertical-align:top;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;color:#111827;">#{escape(check[:id])}</td>
-            <td style="padding:7px 0;vertical-align:top;font-size:13px;color:#6b7280;">#{escape(check[:message])}</td>
-          </tr>
-        ROW
+      return "compute" if tags.include?("compute") || tags.include?("gpu")
+      return "storage" if tags.include?("storage")
+      return "network" if tags.include?("network")
+      return "services" if tags.include?("services")
+      return "packages" if tags.include?("packages")
+      return "hardware" if tags.include?("hardware")
+
+      "other"
+    end
+
+    def grouped_checks(checks, check_tags)
+      groups = GROUP_ORDER.each_with_object({}) { |key, result| result[key] = [] }
+
+      checks.each do |check|
+        groups[group_for(check[:id], check_tags)] << check
+      end
+
+      groups.reject { |_key, list| list.empty? }
+    end
+
+    def sort_checks(checks, failures_first)
+      return checks unless failures_first
+
+      checks.sort_by { |check| [severity_rank(check[:status]), check[:id]] }
+    end
+
+    def severity_rank(status)
+      {
+        "CRIT" => 0, "WARN" => 1, "UNKNOWN" => 2, "SKIP" => 3, "OK" => 4
+      }.fetch(status.to_s.upcase, 5)
+    end
+
+    def check_html_row(check)
+      style = style_for(check[:status])
+
+      <<~ROW
+        <tr>
+          <td style="padding:7px 0;width:86px;vertical-align:top;">
+            <span style="display:inline-block;padding:3px 8px;border-radius:999px;background:#{style[:bg]};color:#{style[:fg]};font-size:11px;font-weight:700;letter-spacing:0.04em;">#{escape(check[:status])}</span>
+          </td>
+          <td style="padding:7px 0;vertical-align:top;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;color:#111827;">#{escape(check[:id])}</td>
+          <td style="padding:7px 0;vertical-align:top;font-size:13px;color:#6b7280;">#{escape(check[:message])}</td>
+        </tr>
+      ROW
+    end
+
+    def checks_html(checks, check_tags, group_by, failures_first)
+      return "" if checks.empty?
+
+      if group_by.to_s == "tags"
+        grouped_checks(checks, check_tags).map do |key, list|
+          rows = sort_checks(list, failures_first).map { |check| check_html_row(check) }.join
+          <<~SECTION
+            <div style="font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#6b7280;margin:24px 0 6px;">#{escape(GROUP_LABELS[key])}</div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;line-height:1.5;">
+              #{rows}
+            </table>
+          SECTION
+        end.join
+      else
+        rows = sort_checks(checks, failures_first).map { |check| check_html_row(check) }.join
+        <<~SECTION
+          <div style="font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#6b7280;margin:24px 0 6px;">Checks</div>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;line-height:1.5;">
+            #{rows}
+          </table>
+        SECTION
+      end
+    end
+
+    def checks_text(checks, check_tags, group_by, failures_first)
+      return [] if checks.empty?
+
+      if group_by.to_s == "tags"
+        grouped_checks(checks, check_tags).flat_map do |key, list|
+          lines = ["", "#{GROUP_LABELS[key]}:"]
+          lines + sort_checks(list, failures_first).map do |check|
+            format("  %-6s %-20s %s", check[:status], check[:id], check[:message])
+          end
+        end
+      else
+        lines = ["", "Checks:"]
+        lines + sort_checks(checks, failures_first).map do |check|
+          format("  %-6s %-20s %s", check[:status], check[:id], check[:message])
+        end
+      end
+    end
+
+    def groups_summary_text(checks, check_tags, group_by)
+      return "" unless group_by.to_s == "tags"
+
+      grouped_checks(checks, check_tags).map do |key, list|
+        total = list.size
+        problems = list.count do |check|
+          %w[CRIT WARN UNKNOWN].include?(check[:status])
+        end
+        "#{GROUP_LABELS[key]} #{total - problems}/#{total}"
+      end.join(" · ")
+    end
+
+    def groups_summary_html(checks, check_tags, group_by)
+      return "" unless group_by.to_s == "tags"
+
+      chips = grouped_checks(checks, check_tags).map do |key, list|
+        total = list.size
+        problems = list.count do |check|
+          %w[CRIT WARN UNKNOWN].include?(check[:status])
+        end
+        healthy = total - problems
+        bg = problems.zero? ? "#dcfce7" : "#fee2e2"
+        fg = problems.zero? ? "#166534" : "#991b1b"
+
+        %(<span style="display:inline-block;padding:3px 8px;border-radius:999px;background:#{bg};color:#{fg};font-size:11px;font-weight:700;margin:2px 4px 2px 0;">#{escape(GROUP_LABELS[key])} #{healthy}/#{total}</span>)
       end.join
+
+      %(<div style="margin-top:10px;">#{chips}</div>)
     end
 
     def summary_text(details)

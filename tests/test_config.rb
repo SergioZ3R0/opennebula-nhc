@@ -183,6 +183,24 @@ class TestConfig < Minitest::Test
     assert_includes error.message, "email.tls"
   end
 
+  def test_accepts_grouped_email
+    assert email_config("group_by" => "tags", "failures_first" => true).validate!
+  end
+
+  def test_rejects_invalid_group_by
+    error = assert_raises(ArgumentError) do
+      email_config("group_by" => "other").validate!
+    end
+    assert_includes error.message, "group_by"
+  end
+
+  def test_rejects_invalid_failures_first
+    error = assert_raises(ArgumentError) do
+      email_config("failures_first" => "yes").validate!
+    end
+    assert_includes error.message, "failures_first"
+  end
+
   def test_rejects_two_email_password_sources
     error = assert_raises(ArgumentError) do
       email_config("password_file" => "/etc/one-nhc/smtp.password").validate!

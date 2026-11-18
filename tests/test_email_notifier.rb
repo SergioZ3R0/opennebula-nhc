@@ -87,7 +87,16 @@ class TestEmailNotifier < Minitest::Test
       details: {
         "NHC_STATUS" => "CRIT",
         "NHC_FS_RO" => "CRIT",
-        "NHC_FS_RO_MSG" => "read-only: /data (ext4)"
+        "NHC_FS_RO_MSG" => "read-only: /data (ext4)",
+        "NHC_INFINIBAND" => "CRIT",
+        "NHC_INFINIBAND_MSG" => "mlx5_0/1 state DOWN",
+        "NHC_NETWORK_INTERFACE" => "OK",
+        "NHC_NETWORK_INTERFACE_MSG" => "3 interface(s) up"
+      },
+      check_tags: {
+        "fs-ro" => ["storage"],
+        "infiniband" => %w[network hardware],
+        "network-interface" => ["network"]
       }
     }.merge(overrides)
   end
@@ -288,5 +297,29 @@ class TestEmailNotifier < Minitest::Test
       mailer.deliver(payload)
     end
     assert_includes error.message, "command not found"
+  end
+
+  def test_grouped_email_contains_sections
+    notifier("group_by" => "tags", "failures_first" => true).deliver(payload)
+    message = call(:send_message)[1]
+
+    assert_includes message, "Network"
+    assert_includes message, "Storage"
+    assert_includes message, "infiniband"
+    assert_includes message, "mlx5_0/1 state DOWN"
+  end
+
+  def test_invalid_group_by_raises
+    error = assert_raises(OneNHC::EmailNotifier::Error) do
+      notifier("group_by" => "other")
+    end
+    assert_includes error.message, "email.group_by"
+  end
+
+  def test_invalid_failures_first_raises
+    error = assert_raises(OneNHC::EmailNotifier::Error) do
+      notifier("failures_first" => "yes")
+    end
+    assert_includes error.message, "email.failures_first"
   end
 end

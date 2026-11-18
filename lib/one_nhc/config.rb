@@ -317,6 +317,17 @@ module OneNHC
         raise ArgumentError, "controller.notify.email.timeout must be >= 1" if value < 1
       end
 
+      group_by = (email["group_by"] || "none").to_s
+      unless %w[none tags].include?(group_by)
+        raise ArgumentError,
+              "controller.notify.email.group_by must be none or tags"
+      end
+
+      unless [true, false, nil].include?(email["failures_first"])
+        raise ArgumentError,
+              "controller.notify.email.failures_first must be true or false"
+      end
+
       if transport == "sendmail"
         validate_sendmail!(email)
       else

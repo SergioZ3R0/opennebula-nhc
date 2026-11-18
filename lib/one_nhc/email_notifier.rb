@@ -29,6 +29,8 @@ module OneNHC
       @from_name      = @config["from_name"].to_s
       @timeout        = Integer(@config.fetch("timeout", 10))
       @subject_prefix = (@config["subject_prefix"] || "[one-nhc]").to_s
+      @group_by       = (@config["group_by"] || "none").to_s
+      @failures_first = @config["failures_first"] == true
 
       if @transport == "sendmail"
         @sendmail_path = (@config["sendmail_path"] || "/usr/sbin/sendmail").to_s
@@ -100,6 +102,12 @@ module OneNHC
       raise Error, "email.to is required" if @to.empty?
       raise Error, "email.from is required" if @from.empty?
       raise Error, "email.timeout must be >= 1" if @timeout < 1
+      unless %w[none tags].include?(@group_by)
+        raise Error, "email.group_by must be none or tags"
+      end
+      unless [true, false, nil].include?(@config["failures_first"])
+        raise Error, "email.failures_first must be true or false"
+      end
 
       if @transport == "sendmail"
         raise Error, "email.sendmail_path is required" if @sendmail_path.empty?
@@ -135,8 +143,12 @@ module OneNHC
 
     def build_message(payload)
       boundary   = "one-nhc-#{Time.now.to_i}-#{rand(1_000_000)}"
-      text_body  = EmailTemplate.text(payload)
-      html_body  = EmailTemplate.html(payload)
+      text_body  = EmailTemplate.text(
+        payload, group_by: @group_by, failures_first: @failures_first
+      )
+      html_body  = EmailTemplate.html(
+        payload, group_by: @group_by, failures_first: @failures_first
+      )
       from_header = @from_name.empty? ? @from : "#{@from_name} <#{@from}>"
       subject    = "#{@subject_prefix} #{payload[:status]} | #{payload[:host]} | #{payload[:action]}"
       subject    = subject.gsub(/\s+/, " ").strip
