@@ -33,7 +33,7 @@ class TestEmailTemplate < Minitest::Test
     "smart" => %w[storage hardware],
     "gpu" => %w[hardware gpu],
     "gpu-fabric" => %w[hardware gpu],
-    "package-version" => ["packages"]
+    "ofed-version" => %w[network hardware]
   }.freeze
 
   ALL_DETAILS = {
@@ -66,8 +66,8 @@ class TestEmailTemplate < Minitest::Test
     "NHC_GPU_MSG" => "4 GPU(s) present",
     "NHC_GPU_FABRIC" => "OK",
     "NHC_GPU_FABRIC_MSG" => "4 GPU(s) Fabric healthy",
-    "NHC_PACKAGE_VERSION" => "OK",
-    "NHC_PACKAGE_VERSION_MSG" => "1 package(s) at the expected version"
+    "NHC_OFED_VERSION" => "OK",
+    "NHC_OFED_VERSION_MSG" => "mlnx-ofa_kernel version 26.01"
   }.freeze
 
   def payload(overrides = {})
@@ -162,9 +162,9 @@ class TestEmailTemplate < Minitest::Test
     assert_includes html, "Storage"
     assert_includes html, "Network"
     assert_includes html, "Services"
-    assert_includes html, "Packages"
-    assert_includes html, "Network 1/2"
+    assert_includes html, "Network 2/3"
     assert_includes html, "infiniband"
+    assert_includes html, "ofed-version"
     assert_includes html, "mlx5_0/1 state DOWN (expected ACTIVE)"
 
     assert_operator html.index("Network"), :<, html.index("infiniband")
@@ -178,9 +178,10 @@ class TestEmailTemplate < Minitest::Test
 
     assert_includes text, "Groups:  Compute 3/3"
     assert_includes text, "Storage 5/5"
-    assert_includes text, "Network 1/2"
+    assert_includes text, "Network 2/3"
     assert_includes text, "Network:"
     assert_includes text, "infiniband"
+    assert_includes text, "ofed-version"
   end
 
   def test_group_by_none_keeps_the_flat_table
@@ -196,5 +197,13 @@ class TestEmailTemplate < Minitest::Test
     )
 
     assert_operator html.index("infiniband"), :<, html.index("datastore-mounts")
+  end
+
+  def test_decision_message_is_above_the_checks
+    html = OneNHC::EmailTemplate.html(payload(message: "UNIQUE-DECISION-MESSAGE"))
+    text = OneNHC::EmailTemplate.text(payload(message: "UNIQUE-DECISION-MESSAGE"))
+
+    assert_operator html.index("UNIQUE-DECISION-MESSAGE"), :<, html.index(">Checks<")
+    assert_operator text.index("UNIQUE-DECISION-MESSAGE"), :<, text.index("Summary:")
   end
 end

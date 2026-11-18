@@ -204,8 +204,8 @@ def email_test_host
       "NHC_GPU_MSG" => "4 GPU(s) present",
       "NHC_GPU_FABRIC" => "OK",
       "NHC_GPU_FABRIC_MSG" => "4 GPU(s) Fabric healthy",
-      "NHC_PACKAGE_VERSION" => "OK",
-      "NHC_PACKAGE_VERSION_MSG" => "1 package(s) at the expected version"
+      "NHC_OFED_VERSION" => "OK",
+      "NHC_OFED_VERSION_MSG" => "mlnx-ofa_kernel version 26.01"
     }
   )
 end

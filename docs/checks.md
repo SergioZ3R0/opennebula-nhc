@@ -31,7 +31,9 @@ together, and how to add a new check without breaking the monitoring cycle.
 ### Current fast checks
 
 `fs-ro`, `datastore-mounts`, `libvirt`, `fs-usage`, `network-interface`,
-`infiniband`, `service`, `raid`, `gpu` (count only) and `package-version`.
+`infiniband`, `service`, `raid`, `gpu` (count only), `package-version` and
+`ofed-version`. `ofed-version` carries the `network` tag, so it appears in the
+Network group in grouped emails.
 
 ### Current heavy checks
 

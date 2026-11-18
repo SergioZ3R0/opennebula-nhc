@@ -104,6 +104,12 @@ module OneNHC
         "package-version" => {
           "enabled" => false,
           "packages" => []
+        },
+        "ofed-version" => {
+          "enabled" => false,
+          "package" => "mlnx-ofa_kernel",
+          "manager" => "auto",
+          "match" => "exact"
         }
       }
     }.freeze

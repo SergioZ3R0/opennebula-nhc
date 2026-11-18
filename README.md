@@ -116,6 +116,7 @@ loop instead, run `one-nhc controller --watch`.
 | `gpu`              | crit     | NVIDIA GPU count differs from expected (fast)              |
 | `gpu-fabric`       | crit     | GPU Fabric State/Status not healthy (heavy, cached)        |
 | `package-version`  | crit     | installed package version does not match the expected one  |
+| `ofed-version`     | crit     | MLNX OFED version does not match (Network group)          |
 
 Statuses: `OK`, `WARN`, `CRIT`, `SKIP` (not applicable) and `UNKNOWN` (could not
 determine). `SKIP` never triggers a quarantine.

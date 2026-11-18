@@ -206,6 +206,12 @@ class TestIntegrationChecks < Minitest::Test
           hosts: all
           packages:
             - {name: mlnx-ofa_kernel, version: "26.01", manager: rpm}
+        ofed-version:
+          enabled: true
+          hosts: all
+          package: mlnx-ofa_kernel
+          version: "26.01"
+          manager: rpm
     YAML
   end
 
@@ -248,7 +254,7 @@ class TestIntegrationChecks < Minitest::Test
     data = check_json
 
     assert_equal "OK", data["status"]
-    assert_equal 12, data["checks"].size
+    assert_equal 13, data["checks"].size
 
     data["checks"].each do |check|
       assert_equal "OK", check["status"], "#{check['id']}: #{check['message']}"
@@ -306,6 +312,10 @@ class TestIntegrationChecks < Minitest::Test
 
   def test_package_version_crit
     assert_check_status("package-version", "CRIT", env: { "SIM_PACKAGE_FAIL" => "1" })
+  end
+
+  def test_ofed_version_crit
+    assert_check_status("ofed-version", "CRIT", env: { "SIM_PACKAGE_FAIL" => "1" })
   end
 
   def test_heavy_checks_use_the_cache
