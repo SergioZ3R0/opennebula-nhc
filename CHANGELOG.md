@@ -7,6 +7,17 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `controller.notify.enabled: false` to keep notification channels configured
+  but silence all of them (useful when Icinga handles alerting).
+- `one-nhc check --nagios` with standard Nagios/Icinga output and performance
+  data.
+- `one-nhc status` to read `NHC_STATUS` through the OpenNebula API, with
+  `--nagios`, `--host` and `--json`.
+- `docs/icinga.md` with CheckCommand, NRPE, fast/heavy and notification
+  examples.
+
 ## [0.9.0] - 2026-11-18
 
 First release with the complete probe, cache and controller feature set.

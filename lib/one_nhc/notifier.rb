@@ -16,6 +16,7 @@ module OneNHC
 
     def initialize(config, clock: nil, sleeper: nil)
       notify   = config.dig("controller", "notify") || {}
+      @enabled = notify.fetch("enabled", true) != false
       @command = notify["command"].to_s
       @webhook = notify["webhook"].to_s
 
@@ -30,11 +31,14 @@ module OneNHC
     end
 
     def notify(message, host:, decision:)
+      return false unless @enabled
+
       payload = self.class.payload(message, host, decision)
 
       run_command(payload) unless @command.empty?
       post_webhook(payload) unless @webhook.empty?
       deliver_email(payload)
+      true
     end
 
     # Payload shared by every notification channel.

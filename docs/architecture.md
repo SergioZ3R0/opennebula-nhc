@@ -38,8 +38,11 @@ systemd units and the guide for adding a check.
 ### CLI
 
 `one-nhc check` prints the human report and runs heavy checks on demand.
-`one-nhc cache` refreshes the heavy-check cache. `--json` is meant for
-automation, `--only` selects checks and `-c` picks a configuration file.
+`one-nhc check --nagios` emits standard Nagios/Icinga output with performance
+data. `one-nhc cache` refreshes the heavy-check cache. `one-nhc status` reads
+`NHC_STATUS` through the OpenNebula API and can also use `--nagios`; it is
+read-only. `--json` is meant for automation, `--only` selects checks and `-c`
+picks a configuration file.
 
 ### Controller (frontend)
 
@@ -83,7 +86,9 @@ file next to it keeps a single controller per state, so the systemd timer and a
 manual `--watch` cannot run at the same time. The systemd timer runs `--once
 --quiet` every two minutes; `--watch` runs the same loop in the foreground.
 
-Notifications go to a command, a JSON webhook and/or email. The webhook is a
+Notifications go to a command, a JSON webhook and/or email. `notify.enabled:
+false` keeps the channels configured but silences all of them, which is useful
+when Icinga handles alerting. The webhook is a
 POST with the shared payload; it retries transient failures (connection errors,
 timeouts, `5xx`, `429`) with exponential backoff and spaces requests within a
 controller run to avoid flooding the receiver. The email body is

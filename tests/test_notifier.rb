@@ -343,4 +343,16 @@ class TestNotifier < Minitest::Test
     assert_equal 2, http.requests
     assert_empty slept
   end
+
+  def test_notifications_can_be_disabled
+    http = FakeHTTP.new { ok_response }
+    cfg  = webhook_config("enabled" => false, "webhook_retries" => 0)
+
+    result = OneNHC::Notifier.new(cfg).notify(
+      "msg", host: host, decision: decision
+    )
+
+    assert_equal false, result
+    assert_equal 0, http.requests
+  end
 end

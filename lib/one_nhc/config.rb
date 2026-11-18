@@ -37,6 +37,7 @@ module OneNHC
           "on_reenable" => nil
         },
         "notify" => {
+          "enabled" => true,
           "command" => nil,
           "webhook" => nil,
           "webhook_retries" => 2,
@@ -308,6 +309,11 @@ module OneNHC
 
       notify = controller["notify"] || {}
       raise ArgumentError, "controller.notify must be a mapping" unless notify.is_a?(Hash)
+
+      enabled = notify["enabled"]
+      unless enabled.nil? || [true, false].include?(enabled)
+        raise ArgumentError, "controller.notify.enabled must be true or false"
+      end
 
       %w[command webhook].each do |key|
         value = notify[key]

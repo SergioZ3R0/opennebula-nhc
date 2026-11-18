@@ -182,6 +182,9 @@ controller:
 Keep `include_hosts` limited to the canary. Expand it only after the canary
 checks in section 6 pass.
 
+If Icinga handles alerts, add `notify.enabled: false` so one-nhc only quarantines
+and does not duplicate emails or webhooks.
+
 `reenable_after` is a trial: the controller enables the host after that delay
 and ignores the old `CRIT` value for `monitor_grace` seconds. Use `0` if you
 prefer a manual `onehost enable`.
@@ -307,6 +310,16 @@ cat /var/lib/one-nhc/state.json
 one-nhc controller --once --json
 onehost show <id> | grep NHC_
 ```
+
+For Icinga/Nagios:
+
+```bash
+one-nhc check --nagios
+one-nhc status --nagios
+one-nhc status --nagios --host <id>
+```
+
+See [icinga.md](icinga.md) for the CheckCommand and NRPE examples.
 
 A healthy state entry looks like:
 

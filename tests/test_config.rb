@@ -144,6 +144,18 @@ class TestConfig < Minitest::Test
     assert cfg.validate!
   end
 
+  def test_notifications_can_be_disabled_in_config
+    cfg = config("notify" => { "enabled" => false })
+    assert cfg.validate!
+  end
+
+  def test_rejects_non_boolean_notify_enabled
+    error = assert_raises(ArgumentError) do
+      config("notify" => { "enabled" => "no" }).validate!
+    end
+    assert_includes error.message, "notify.enabled"
+  end
+
   def test_rejects_negative_webhook_retries
     error = assert_raises(ArgumentError) do
       config("notify" => { "webhook_retries" => -1 }).validate!

@@ -34,6 +34,7 @@ def usage
       one-nhc check       [options]   run checks and print a human report
       one-nhc probe       [options]   run checks and print OpenNebula IM attributes
       one-nhc cache       [options]   run heavy checks and write the cache
+      one-nhc status      [options]   read NHC_STATUS from the OpenNebula API
       one-nhc controller  [options]   evaluate hosts and apply the configured mode
       one-nhc notify-test [options]   send a test email using controller.notify.email
       one-nhc list                    list available checks
@@ -42,7 +43,9 @@ def usage
     Options:
       -c, --config FILE    config file (default: #{DEFAULT_CONFIG})
       -n, --node NAME      evaluate targeting as if running on NAME
-      -j, --json           JSON output (check and controller)
+      -j, --json           JSON output (check, status and controller)
+          --nagios         Nagios/Icinga plugin output (check and status)
+          --host NAME|ID   status: only this host
       -o, --only IDS       comma separated check ids to run
           --once           run the controller once (default)
           --watch          run the controller in a loop
@@ -70,13 +73,17 @@ options = {
   state: nil,
   cache: nil,
   quiet: false,
-  to: nil
+  to: nil,
+  nagios: false,
+  host: nil
 }
 
 parser = OptionParser.new do |opts|
   opts.on("-c", "--config FILE") { |value| options[:config] = value }
   opts.on("-n", "--node NAME") { |value| options[:node] = value }
   opts.on("-j", "--json") { options[:json] = true }
+  opts.on("--nagios") { options[:nagios] = true }
+  opts.on("--host NAME|ID") { |value| options[:host] = value }
   opts.on("-o", "--only IDS") { |value| options[:only] = value.split(",").map(&:strip) }
   opts.on("--once") { options[:once] = true }
   opts.on("--watch") { options[:watch] = true }
@@ -150,6 +157,16 @@ def controller_payload(decisions)
       "reason" => decision.reason
     }
   end
+end
+
+def host_status_hash(host)
+  {
+    "id" => host.id,
+    "name" => host.name,
+    "cluster" => host.cluster,
+    "status" => host.status,
+    "details" => host.details || {}
+  }
 end
 
 def run_controller_once(controller, json, quiet: false)
@@ -245,17 +262,51 @@ begin
 
     output = if options[:json]
                OneNHC::Adapters::Json.render(results)
+             elsif options[:nagios]
+               OneNHC::Adapters::Nagios.check(results)
              else
                OneNHC::Adapters::Human.render(results)
              end
     print output
 
-    unless options[:json]
+    unless options[:json] || options[:nagios]
       skipped = runner.not_targeted
       puts "not targeted on #{runner.node}: #{skipped.map(&:id).join(', ')}" unless skipped.empty?
     end
 
     exit OneNHC::Runner.exit_code(results)
+  when "status"
+    require "one_nhc/on_api"
+
+    hosts = OneNHC::OnAPI.new.hosts
+    if options[:host]
+      wanted = options[:host].to_s
+      hosts  = hosts.select do |host|
+        host.name.to_s == wanted || host.id.to_s == wanted
+      end
+    end
+
+    if hosts.empty?
+      message = options[:host] ? "host '#{options[:host]}' not found" : "no hosts found"
+      if options[:nagios]
+        puts "UNKNOWN - #{message} | hosts=0 ok=0 warn=0 crit=0 skip=0 unknown=1"
+      elsif options[:json]
+        puts JSON.pretty_generate([])
+      else
+        warn "one-nhc: #{message}"
+      end
+      exit 3
+    end
+
+    if options[:json]
+      puts JSON.pretty_generate(hosts.map { |host| host_status_hash(host) })
+    elsif options[:nagios]
+      print OneNHC::Adapters::Nagios.hosts(hosts)
+    else
+      print OneNHC::Adapters::Human.hosts(hosts)
+    end
+
+    exit OneNHC::Adapters::Nagios.exit_code(hosts.map(&:status))
   when "probe"
     _config, runner = build_runner(options, cache: true)
     print OneNHC::Adapters::OnMonitor.render(runner.probe_results)
@@ -332,10 +383,20 @@ rescue ArgumentError => e
   end
   exit 1
 rescue LoadError => e
+  if command == "status" && options[:nagios]
+    puts "UNKNOWN - one-nhc status: #{e.message} | hosts=0 ok=0 warn=0 crit=0 skip=0 unknown=1"
+    exit 3
+  end
+
   warn "one-nhc: the controller needs the OpenNebula Ruby bindings: #{e.message}"
   exit 1
 rescue StandardError => e
-  raise unless %w[controller notify-test cache].include?(command)
+  if command == "status" && options[:nagios]
+    puts "UNKNOWN - one-nhc status failed: #{e.class}: #{e.message} | hosts=0 ok=0 warn=0 crit=0 skip=0 unknown=1"
+    exit 3
+  end
+
+  raise unless %w[controller notify-test cache status].include?(command)
 
   warn "one-nhc: #{command} failed: #{e.class}: #{e.message}"
   exit 1

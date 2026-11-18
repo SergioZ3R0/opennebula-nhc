@@ -324,6 +324,16 @@ evaluated on every controller cycle.
 In `notify` and `act` modes the controller can run a command and/or POST a
 webhook for each decision (including `refuse_disable`).
 
+```yaml
+controller:
+  notify:
+    enabled: true       # false keeps the channels configured but silences them
+```
+
+`notify.enabled: false` turns off command, webhook and email in one place. This
+is useful when Icinga handles alerts but you still want `act` mode to quarantine
+hosts. `one-nhc notify-test` still sends a test email because it is explicit.
+
 The command receives:
 
 | Variable | Meaning |
@@ -454,6 +464,25 @@ one-nhc controller --once --quiet
 one-nhc controller --once --json
 ```
 
+## Icinga / Nagios
+
+`one-nhc check --nagios` is a standard Nagios/Icinga plugin: exit codes
+`0/1/2/3`, one short line, long output and performance data. It can be called
+with `check_by_ssh`, NRPE or a local Icinga agent.
+
+On the frontend you can also use `one-nhc status --nagios`, which reads the
+`NHC_*` attributes through the OpenNebula API and never changes hosts. This is
+useful when Icinga runs centrally and you do not want SSH to every hypervisor.
+
+```bash
+one-nhc check --nagios
+one-nhc status --nagios
+one-nhc status --nagios --host node1
+```
+
+See [docs/icinga.md](docs/icinga.md) for CheckCommand examples, NRPE, fast and
+heavy services, performance data and the notification toggle.
+
 ## Simulating failures
 
 ```bash
@@ -484,8 +513,9 @@ and only then to `act` with `dry_run: true` before enabling real actions.
   `onehost disable/enable`.
 - **M3 (done):** HPC checks, heavy-check cache, SMART and GPU Fabric, hooks;
   evacuation is an external hook example, not a built-in action.
-- **M4 (in progress):** production runbook, changelog, release tarball and
-  GitHub release automation; docs/blog and an upstream PR are still pending.
+- **M4 (in progress):** production runbook, changelog, release tarball, GitHub
+  release automation and Icinga/Nagios integration; docs/blog and an upstream PR
+  are still pending.
 
 See [CHANGELOG.md](CHANGELOG.md) for the release history.
 

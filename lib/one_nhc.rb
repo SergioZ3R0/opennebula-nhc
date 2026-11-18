@@ -21,6 +21,7 @@ require_relative "one_nhc/notifier"
 require_relative "one_nhc/adapters/human"
 require_relative "one_nhc/adapters/on_monitor"
 require_relative "one_nhc/adapters/json"
+require_relative "one_nhc/adapters/nagios"
 
 require "socket"
 
