@@ -58,9 +58,20 @@ Safety: only `CRIT` starts the counter (`SKIP`, `WARN` and `UNKNOWN` never
 quarantine), counters advance once per distinct `NHC_TIMESTAMP` sample (not per
 controller cycle), decisions are announced once per episode, and the controller
 refuses to disable when fewer than `min_healthy_hosts` healthy monitored hosts
-would remain. It also tracks whether it disabled each host, so an operator
-enabling a host outside one-nhc resets the state instead of fighting the
-operator.
+would remain. With `min_healthy_hosts_scope: cluster` that count is per
+OpenNebula cluster (`CLUSTER`), so a shared failure cannot empty one cluster
+while another still has healthy hosts. It also tracks whether it disabled each
+host, so an operator enabling a host outside one-nhc resets the state instead of
+fighting the operator.
+
+`WARN` never quarantines or runs hooks. With `notify_on_warn: true` (default)
+the controller sends one notification per WARN episode, so early warnings such
+as a filesystem at 92% are not silent.
+
+When the controller disables a host it writes `NHC_DISABLED="yes"` to the host
+template and clears it on enable. That attribute survives a lost state file or a
+host rename, so the controller can still recognise its own quarantine and
+re-enable the host later.
 
 A disabled host is not monitored, so its monitoring attributes do not change.
 `reenable_after` optionally enables it again after a delay as a trial, and
@@ -114,12 +125,20 @@ Every check can be scoped to hosts with clush/dsh-style hostlists:
 
 ```yaml
 groups:
-  gpu: "gpu[01-02]"
+  default:
+    cpu: "node001,node002"
+    gpu: "gpunv0[01,02],gpuamd0[01-10]"
+  LLM:
+    fat: "fat0[01-10]"
 checks:
   infiniband:
-    hosts: "@gpu"
-    exclude: "gpu02"
+    hosts: "@default/gpu"
+    exclude: "gpunv02"
 ```
+
+Nested groups are flattened to `cluster/role` (`default/cpu`, `LLM/fat`), so a
+check can target `@default/gpu` without duplicating hosts. Flat groups are still
+supported and behave exactly as before.
 
 The probe evaluates the expression against the local node name (the short
 hostname, `node_name` in the config, or the `ONE_NHC_NODE` environment

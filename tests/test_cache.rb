@@ -72,4 +72,40 @@ class TestCache < Minitest::Test
 
     assert_nil @cache.result("smart", ttl: 10, now: 105)
   end
+
+  def test_write_records_the_schema_version
+    @cache.write([result], host: "node01", now: 100)
+
+    data = JSON.parse(File.read(@path))
+    assert_equal OneNHC::Cache::SCHEMA_VERSION, data["schema_version"]
+  end
+
+  def test_legacy_cache_without_schema_version_is_accepted
+    File.write(
+      @path,
+      JSON.generate(
+        "checks" => {
+          "smart" => { "status" => "ok", "message" => "legacy", "at" => 100 }
+        }
+      )
+    )
+
+    cached = @cache.result("smart", ttl: 10, now: 105)
+    refute_nil cached
+    assert_equal :ok, cached.status
+  end
+
+  def test_mismatched_schema_version_is_ignored
+    File.write(
+      @path,
+      JSON.generate(
+        "schema_version" => OneNHC::Cache::SCHEMA_VERSION + 1,
+        "checks" => {
+          "smart" => { "status" => "ok", "message" => "future", "at" => 100 }
+        }
+      )
+    )
+
+    assert_nil @cache.result("smart", ttl: 10, now: 105)
+  end
 end

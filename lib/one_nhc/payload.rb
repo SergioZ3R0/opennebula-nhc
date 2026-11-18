@@ -18,6 +18,7 @@ module OneNHC
         message: message,
         host: host.name,
         host_id: host.id,
+        cluster: host.respond_to?(:cluster) ? host.cluster : nil,
         status: host.status,
         action: decision.action.to_s,
         applied: decision.applied,

@@ -17,6 +17,7 @@ module OneNHC
       "controller" => {
         "mode" => "monitor",
         "dry_run" => false,
+        "notify_on_warn" => true,
         "consecutive_crit" => 3,
         "consecutive_ok" => 2,
         "cooldown" => 300,
@@ -24,6 +25,7 @@ module OneNHC
         "monitor_grace" => 900,
         "never_disable_last" => true,
         "min_healthy_hosts" => 1,
+        "min_healthy_hosts_scope" => "global",
         "include_hosts" => "all",
         "exclude_hosts" => nil,
         "interval" => 60,
@@ -94,16 +96,13 @@ module OneNHC
         "gpu" => {
           "enabled" => false,
           "required" => false,
+          "count_mig" => true,
           "timeout" => 10
         },
         "gpu-fabric" => {
           "enabled" => false,
           "required" => false,
           "timeout" => 10
-        },
-        "package-version" => {
-          "enabled" => false,
-          "packages" => []
         },
         "ofed-version" => {
           "enabled" => false,
@@ -143,8 +142,36 @@ module OneNHC
       end
     end
 
+    # Flattens nested group definitions:
+    #   { "default" => { "cpu" => "node[01-02]" } }
+    # becomes:
+    #   { "default/cpu" => "node[01-02]" }
+    # Flat groups are kept as-is.
+    def self.flatten_groups(groups, prefix = nil, result = {})
+      return result if groups.nil?
+
+      raise ArgumentError, "groups must be a mapping" unless groups.is_a?(Hash)
+
+      groups.each do |key, value|
+        name = prefix ? "#{prefix}/#{key}" : key.to_s
+
+        if value.is_a?(Hash)
+          flatten_groups(value, name, result)
+        elsif value.is_a?(Array)
+          result[name] = value.map(&:to_s).join(",")
+        else
+          result[name] = value.to_s
+        end
+      end
+
+      result
+    end
+
     def initialize(hash)
       @hash = hash
+      if @hash.key?("groups")
+        @hash["groups"] = self.class.flatten_groups(@hash["groups"] || {})
+      end
     end
 
     def [](key)
@@ -205,7 +232,7 @@ module OneNHC
       # always merges the defaults. Only validate what is present.
       return if controller.empty?
 
-      %w[dry_run never_disable_last].each do |key|
+      %w[dry_run never_disable_last notify_on_warn].each do |key|
         value = controller[key]
         next if value.nil? || value == true || value == false
 
@@ -230,6 +257,12 @@ module OneNHC
 
         value = positive_integer(key, controller[key])
         raise ArgumentError, "controller.#{key} must be >= 0" if value.negative?
+      end
+
+      scope = (controller["min_healthy_hosts_scope"] || "global").to_s
+      unless %w[global cluster].include?(scope)
+        raise ArgumentError,
+              "controller.min_healthy_hosts_scope must be global or cluster"
       end
 
       %w[include_hosts exclude_hosts].each do |key|

@@ -11,12 +11,14 @@ class TestController < Minitest::Test
 
   # Minimal stand-in for OneNHC::OnAPI.
   class FakeAPI
-    attr_reader :hosts, :disabled, :enabled
+    attr_reader :hosts, :disabled, :enabled, :marked_disabled, :marked_enabled
 
     def initialize(hosts)
-      @hosts    = hosts
-      @disabled = []
-      @enabled  = []
+      @hosts           = hosts
+      @disabled        = []
+      @enabled         = []
+      @marked_disabled = []
+      @marked_enabled  = []
     end
 
     def disable(id)
@@ -27,6 +29,18 @@ class TestController < Minitest::Test
     def enable(id)
       @enabled << id
       @hosts.find { |host| host.id == id }&.state = MONITORED
+    end
+
+    def mark_disabled(id)
+      @marked_disabled << id
+      host = @hosts.find { |candidate| candidate.id == id }
+      host.details["NHC_DISABLED"] = "yes" if host&.details
+    end
+
+    def mark_enabled(id)
+      @marked_enabled << id
+      host = @hosts.find { |candidate| candidate.id == id }
+      host.details["NHC_DISABLED"] = "no" if host&.details
     end
   end
 
@@ -81,9 +95,10 @@ class TestController < Minitest::Test
     FileUtils.remove_entry(@dir)
   end
 
-  def host(id:, name:, status:, state: MONITORED, sample: nil)
+  def host(id:, name:, status:, state: MONITORED, sample: nil, cluster: nil, details: nil)
     OneNHC::HostView.new(
-      id: id, name: name, status: status, state: state, sample: sample
+      id: id, name: name, status: status, state: state,
+      sample: sample, cluster: cluster, details: details
     )
   end
 
@@ -246,6 +261,40 @@ class TestController < Minitest::Test
     assert_equal [1], api.disabled
   end
 
+  def test_cluster_scope_refuses_to_empty_a_cluster
+    api = FakeAPI.new([
+                        host(id: 1, name: "node01", status: "CRIT", cluster: "default"),
+                        host(id: 2, name: "node02", status: "OK", cluster: "LLM")
+                      ])
+    cfg = config(
+      "consecutive_crit" => 1,
+      "min_healthy_hosts" => 1,
+      "min_healthy_hosts_scope" => "cluster"
+    )
+
+    decisions = run_times(controller(api, mode: "act", cfg: cfg), 1)
+
+    assert_empty api.disabled
+    assert_equal :refuse_disable, decisions.last.action
+    assert_includes decisions.last.reason, "cluster default"
+  end
+
+  def test_global_scope_allows_disabling_the_last_host_in_a_cluster
+    api = FakeAPI.new([
+                        host(id: 1, name: "node01", status: "CRIT", cluster: "default"),
+                        host(id: 2, name: "node02", status: "OK", cluster: "LLM")
+                      ])
+    cfg = config(
+      "consecutive_crit" => 1,
+      "min_healthy_hosts" => 1,
+      "min_healthy_hosts_scope" => "global"
+    )
+
+    run_times(controller(api, mode: "act", cfg: cfg), 1)
+
+    assert_equal [1], api.disabled
+  end
+
   def test_unknown_and_warn_do_not_disable
     api = FakeAPI.new([
                         host(id: 1, name: "node01", status: "UNKNOWN"),
@@ -318,7 +367,70 @@ class TestController < Minitest::Test
     assert_empty api.enabled
     refute entry["disabled_by_nhc"]
     assert_equal @clock.now.to_i, entry["last_enable"]
+    assert_includes api.marked_enabled, 1
     assert(@logs.any? { |line| line.include?("enabled outside one-nhc") })
+  end
+
+  def test_disable_marks_the_nhc_disabled_attribute
+    api = FakeAPI.new([host(id: 1, name: "node01", status: "CRIT")])
+
+    run_times(
+      controller(api, mode: "act",
+                 cfg: config("consecutive_crit" => 1, "min_healthy_hosts" => 0)), 1
+    )
+
+    assert_equal [1], api.disabled
+    assert_equal [1], api.marked_disabled
+  end
+
+  def test_recovery_from_nhc_disabled_after_state_loss
+    api = FakeAPI.new([
+                        host(id: 1, name: "node01", status: "CRIT", state: DISABLED,
+                             details: { "NHC_DISABLED" => "yes" })
+                      ])
+    st  = state_store
+    cfg = config("reenable_after" => 60)
+
+    run_times(controller(api, mode: "act", store: st, cfg: cfg), 1)
+
+    assert st.entry("node01")["disabled_by_nhc"]
+    assert_empty api.enabled
+    assert(@logs.any? { |line| line.include?("recovered from NHC_DISABLED") })
+
+    @clock.advance(61)
+    run_times(controller(api, mode: "act", store: st, cfg: cfg), 1)
+
+    assert_equal [1], api.enabled
+    assert_includes api.marked_enabled, 1
+    refute st.entry("node01")["disabled_by_nhc"]
+  end
+
+  def test_disabled_host_without_the_attribute_is_not_claimed
+    api = FakeAPI.new([
+                        host(id: 1, name: "node01", status: "CRIT", state: DISABLED)
+                      ])
+    st = state_store
+
+    run_times(
+      controller(api, mode: "act", store: st, cfg: config("reenable_after" => 60)), 1
+    )
+
+    refute st.entry("node01")["disabled_by_nhc"]
+    assert_empty api.enabled
+  end
+
+  def test_stale_nhc_disabled_flag_on_an_enabled_host_is_cleared
+    details = { "NHC_DISABLED" => "yes" }
+    api = FakeAPI.new([
+                        host(id: 1, name: "node01", status: "OK",
+                             details: details)
+                      ])
+
+    run_times(controller(api, mode: "act"), 1)
+
+    assert_includes api.marked_enabled, 1
+    assert_equal "no", details["NHC_DISABLED"]
+    assert(@logs.any? { |line| line.include?("stale NHC_DISABLED") })
   end
 
   def test_trial_reenable_after_delay
@@ -482,6 +594,64 @@ class TestController < Minitest::Test
     hooks = FakeHooks.new
 
     run_times(controller(api, mode: "act", hooks: hooks), 3)
+
+    assert_empty hooks.payloads
+  end
+
+  def test_warn_notifies_once_per_episode
+    api = FakeAPI.new([host(id: 1, name: "node01", status: "WARN")])
+
+    run_times(controller(api, mode: "notify"), 3)
+
+    assert_equal 1, @notifier.messages.size
+    assert_equal :warn, @notifier.messages.first[:action]
+  end
+
+  def test_warn_notifies_again_after_recovery
+    api = FakeAPI.new([host(id: 1, name: "node01", status: "WARN")])
+    ctl = controller(api, mode: "notify")
+
+    run_times(ctl, 1)
+    api.hosts.first.status = "OK"
+    run_times(ctl, 1)
+    api.hosts.first.status = "WARN"
+    run_times(ctl, 1)
+
+    assert_equal 2, @notifier.messages.size
+  end
+
+  def test_warn_does_not_notify_in_monitor_mode
+    api = FakeAPI.new([host(id: 1, name: "node01", status: "WARN")])
+
+    run_times(controller(api, mode: "monitor"), 2)
+
+    assert_empty @notifier.messages
+    assert(@logs.any? { |line| line.include?("(warning)") })
+  end
+
+  def test_warn_in_act_mode_is_not_labelled_dry_run
+    api = FakeAPI.new([host(id: 1, name: "node01", status: "WARN")])
+
+    run_times(controller(api, mode: "act"), 1)
+
+    assert(@logs.any? { |line| line.include?("(warning)") })
+    refute(@logs.any? { |line| line.include?("(dry-run)") })
+  end
+
+  def test_warn_can_be_disabled
+    api = FakeAPI.new([host(id: 1, name: "node01", status: "WARN")])
+    cfg = config("notify_on_warn" => false)
+
+    run_times(controller(api, mode: "notify", cfg: cfg), 2)
+
+    assert_empty @notifier.messages
+  end
+
+  def test_warn_does_not_run_hooks
+    api = FakeAPI.new([host(id: 1, name: "node01", status: "WARN")])
+    hooks = FakeHooks.new
+
+    run_times(controller(api, mode: "act", hooks: hooks), 1)
 
     assert_empty hooks.payloads
   end

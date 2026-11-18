@@ -31,9 +31,9 @@ together, and how to add a new check without breaking the monitoring cycle.
 ### Current fast checks
 
 `fs-ro`, `datastore-mounts`, `libvirt`, `fs-usage`, `network-interface`,
-`infiniband`, `service`, `raid`, `gpu` (count only), `package-version` and
-`ofed-version`. `ofed-version` carries the `network` tag, so it appears in the
-Network group in grouped emails.
+`infiniband`, `service`, `raid`, `gpu` (count only) and `ofed-version`.
+`ofed-version` carries the `network` tag, so it appears in the Network group in
+grouped emails.
 
 ### Current heavy checks
 
@@ -43,7 +43,9 @@ Network group in grouped emails.
 | `gpu-fabric` | 1800 s | `nvidia-smi -q` per GPU is expensive |
 
 `gpu` is deliberately **fast**: it only runs `nvidia-smi -L`, so a GPU that
-disappears is detected in the next probe sample. Only Fabric is cached.
+disappears is detected in the next probe sample. It counts physical GPUs and,
+by default, MIG partitions (`count_mig: true`); set `count_mig: false` to count
+only physical GPUs. Only Fabric is cached.
 
 Future heavy candidates: NFS write tests, RAID scrub status, firmware inventory.
 
@@ -105,6 +107,7 @@ Default path: `/var/lib/one-nhc/cache.json` (`cache_file` in the config).
 
 ```json
 {
+  "schema_version": 1,
   "generated_at": 1794946094,
   "host": "node1",
   "checks": {
@@ -126,6 +129,9 @@ Default path: `/var/lib/one-nhc/cache.json` (`cache_file` in the config).
 }
 ```
 
+- `schema_version` is written by `one-nhc cache`. Legacy files without it are
+  still accepted; a different schema version is ignored and treated as a stale
+  cache until the next refresh.
 - `at` is per check; `ttl` is a property of the check, not stored in the file.
 - Writes are atomic: temporary file + rename.
 - The cache is local to each host and contains no secrets.
@@ -324,13 +330,14 @@ A permission problem is reported as `UNKNOWN`, never `CRIT`.
 ### `gpu` is CRIT but `gpu-fabric` is OK
 
 That is expected: `gpu` checks the count on every probe, while Fabric is cached.
-A missing GPU is detected in the next probe sample; Fabric can be up to its TTL
-old.
+A missing GPU (or a MIG partition, when `count_mig` is enabled) is detected in
+the next probe sample; Fabric can be up to its TTL old.
 
-### Cache is corrupt
+### Cache is corrupt or from another schema
 
 Delete or rewrite it with `one-nhc cache`. The probe treats a corrupt file as an
-empty cache and reports `UNKNOWN` for heavy checks until it is repaired.
+empty cache and reports `UNKNOWN` for heavy checks until it is repaired. The same
+happens when `schema_version` does not match: the file is ignored, not trusted.
 
 ### Clock skew
 

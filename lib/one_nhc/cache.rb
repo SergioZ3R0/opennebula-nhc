@@ -9,6 +9,11 @@ module OneNHC
   # Per-host cache for heavy checks. The probe reads it and `one-nhc cache`
   # writes it from a systemd timer.
   class Cache
+    # Bump when the on-disk layout changes in a way that old entries cannot be
+    # trusted. Entries without a schema_version are legacy files and are still
+    # accepted; entries written by a newer schema are ignored.
+    SCHEMA_VERSION = 1
+
     def initialize(path)
       @path = path
     end
@@ -16,6 +21,8 @@ module OneNHC
     # Returns a Result when the cached entry exists and is fresh, nil otherwise.
     def result(check_id, ttl:, now: Time.now.to_i)
       data  = load
+      return nil if schema_mismatch?(data)
+
       entry = data.dig("checks", check_id)
       return nil unless entry.is_a?(Hash)
 
@@ -49,6 +56,7 @@ module OneNHC
       end
 
       data = {
+        "schema_version" => SCHEMA_VERSION,
         "generated_at" => now,
         "host" => host.to_s,
         "checks" => checks
@@ -69,6 +77,14 @@ module OneNHC
       data.is_a?(Hash) ? data : {}
     rescue JSON::ParserError
       {}
+    end
+
+    # Missing schema_version means a legacy cache file: accept it. A different
+    # value means the file was written by an incompatible version: ignore it.
+    def schema_mismatch?(data)
+      return false unless data.key?("schema_version")
+
+      data["schema_version"].to_i != SCHEMA_VERSION
     end
   end
 end

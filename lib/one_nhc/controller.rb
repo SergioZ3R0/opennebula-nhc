@@ -10,7 +10,10 @@ module OneNHC
   # to distinct monitoring samples instead of counting the same value on every
   # controller cycle. `details` is the NHC_* template hash used by the email
   # notification to list the checks.
-  HostView = Struct.new(:id, :name, :status, :state, :sample, :details, keyword_init: true)
+  HostView = Struct.new(
+    :id, :name, :status, :state, :sample, :details, :cluster,
+    keyword_init: true
+  )
 
   # Evaluates host health and optionally quarantines or re-enables hosts.
   #
@@ -54,13 +57,18 @@ module OneNHC
       hosts   = @api.hosts
       healthy = hosts.count { |host| healthy?(host) }
 
+      healthy_by_cluster = Hash.new(0)
+      hosts.each do |host|
+        healthy_by_cluster[cluster_key(host)] += 1 if healthy?(host)
+      end
+
       decisions = []
 
       hosts.each do |host|
         next unless targeted?(host)
 
         begin
-          decisions.concat(evaluate(host, healthy))
+          decisions.concat(evaluate(host, healthy, healthy_by_cluster))
         rescue StandardError => e
           log("error evaluating #{host.name}: #{e.class}: #{e.message}")
         end
@@ -72,14 +80,15 @@ module OneNHC
 
     private
 
-    def evaluate(host, healthy)
+    def evaluate(host, healthy, healthy_by_cluster)
       entry     = @state.entry(host.name)
       decisions = []
 
+      recover_disabled_state(host, entry)
       clear_external_enable(host, entry)
 
       if fresh_sample?(host, entry)
-        decisions.concat(evaluate_status(host, entry, healthy))
+        decisions.concat(evaluate_status(host, entry, healthy, healthy_by_cluster))
       end
 
       if decisions.empty?
@@ -103,17 +112,55 @@ module OneNHC
       true
     end
 
-    def evaluate_status(host, entry, healthy)
+    def evaluate_status(host, entry, healthy, healthy_by_cluster)
       update_counters(entry, host.status)
       reset_notification(entry) if host.status == "OK" && !entry["disabled_by_nhc"]
+      entry["warn_notified"] = false if host.status == "OK"
 
       decision = if host.status == "CRIT"
-                   try_disable(host, entry, healthy)
+                   try_disable(host, entry, healthy, healthy_by_cluster)
                  elsif host.status == "OK"
                    try_enable(host, entry)
+                 elsif host.status == "WARN"
+                   notify_warn(host, entry)
                  end
 
       decision ? [decision] : []
+    end
+
+    def notify_warn(host, entry)
+      return nil if setting("notify_on_warn") == false
+      return nil if entry["warn_notified"]
+
+      entry["warn_notified"] = true
+      report(host, Decision.new(
+               host: host,
+               action: :warn,
+               reason: "NHC_STATUS=WARN",
+               applied: false
+             ))
+    end
+
+    # A host can be disabled while the state file is lost or the host is
+    # renamed. The NHC_DISABLED attribute on the host survives both.
+    def recover_disabled_state(host, entry)
+      return if entry["disabled_by_nhc"]
+
+      details = host.respond_to?(:details) ? host.details : nil
+      flag    = details.is_a?(Hash) && details["NHC_DISABLED"].to_s == "yes"
+      return unless flag
+
+      unless host.state == HOST_DISABLED
+        # The host is enabled, so the flag is stale (for example, state was
+        # lost after an external enable). Clear it instead of trusting it.
+        mark_enabled(host.id)
+        log("host #{host.name} has a stale NHC_DISABLED attribute, clearing it")
+        return
+      end
+
+      entry["disabled_by_nhc"] = true
+      entry["last_action"]     = @now.call.to_i
+      log("host #{host.name} was disabled by one-nhc (recovered from NHC_DISABLED)")
     end
 
     # A host that was disabled by one-nhc but is monitored again was enabled
@@ -126,6 +173,7 @@ module OneNHC
       entry["crit_count"]      = 0
       entry["ok_count"]        = 0
       entry["last_enable"]     = @now.call.to_i
+      mark_enabled(host.id)
       log("host #{host.name} was enabled outside one-nhc, clearing state")
     end
 
@@ -144,7 +192,7 @@ module OneNHC
       entry["notified_action"] = nil
     end
 
-    def try_disable(host, entry, healthy)
+    def try_disable(host, entry, healthy, healthy_by_cluster)
       return nil if entry["disabled_by_nhc"]
       return nil unless host.state == HOST_MONITORED
       return nil if within_grace?(entry)
@@ -152,11 +200,23 @@ module OneNHC
       return nil if cooling_down?(entry)
 
       min_healthy = minimum_healthy_hosts
-      if min_healthy.positive? && healthy < min_healthy
-        return announce(
-          host, entry, :refuse_disable,
-          "would leave #{healthy} healthy host(s), minimum is #{min_healthy}"
-        )
+      if min_healthy.positive?
+        remaining = if cluster_scope?
+                      healthy_by_cluster[cluster_key(host)]
+                    else
+                      healthy
+                    end
+
+        if remaining < min_healthy
+          reason = if cluster_scope?
+                     "would leave #{remaining} healthy host(s) in cluster " \
+                       "#{cluster_key(host)}, minimum is #{min_healthy}"
+                   else
+                     "would leave #{remaining} healthy host(s), minimum is #{min_healthy}"
+                   end
+
+          return announce(host, entry, :refuse_disable, reason)
+        end
       end
 
       return nil if entry["notified_action"] == "disable"
@@ -173,6 +233,7 @@ module OneNHC
         decision.applied         = true
         entry["disabled_by_nhc"] = true
         entry["last_action"]     = @now.call.to_i
+        mark_disabled(host.id)
       end
 
       entry["notified_action"] = "disable"
@@ -201,6 +262,7 @@ module OneNHC
         entry["last_enable"]     = @now.call.to_i
         entry["crit_count"]      = 0
         entry["ok_count"]        = 0
+        mark_enabled(host.id)
       end
 
       entry["notified_action"] = "enable"
@@ -233,6 +295,7 @@ module OneNHC
         entry["last_enable"]     = @now.call.to_i
         entry["crit_count"]      = 0
         entry["ok_count"]        = 0
+        mark_enabled(host.id)
       end
 
       entry["notified_action"] = "reenable"
@@ -253,6 +316,8 @@ module OneNHC
                 "applied"
               elsif decision.action == :refuse_disable
                 "refused"
+              elsif decision.action == :warn
+                "warning"
               elsif act?
                 "dry-run"
               else
@@ -309,6 +374,31 @@ module OneNHC
       return 0 if setting("never_disable_last") == false
 
       integer("min_healthy_hosts", 1)
+    end
+
+    def cluster_scope?
+      setting("min_healthy_hosts_scope").to_s == "cluster"
+    end
+
+    def cluster_key(host)
+      value = host.respond_to?(:cluster) ? host.cluster.to_s : ""
+      value.empty? ? "default" : value
+    end
+
+    def mark_disabled(id)
+      return unless @api.respond_to?(:mark_disabled)
+
+      @api.mark_disabled(id)
+    rescue StandardError => e
+      log("could not set NHC_DISABLED on host #{id}: #{e.message}")
+    end
+
+    def mark_enabled(id)
+      return unless @api.respond_to?(:mark_enabled)
+
+      @api.mark_enabled(id)
+    rescue StandardError => e
+      log("could not clear NHC_DISABLED on host #{id}: #{e.message}")
     end
 
     def act?

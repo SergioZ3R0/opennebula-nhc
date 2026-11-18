@@ -22,6 +22,8 @@ module OneNHC
       pool.each do |host|
         template = host.to_hash.dig("HOST", "TEMPLATE") || {}
         details  = template.select { |key, _| key.start_with?("NHC_") }
+        cluster  = host["CLUSTER"].to_s
+        cluster  = host["CLUSTER_ID"].to_s if cluster.empty?
 
         list << HostView.new(
           id: host.id,
@@ -29,7 +31,8 @@ module OneNHC
           status: normalize(template["NHC_STATUS"]),
           state: host["STATE"].to_i,
           sample: template["NHC_TIMESTAMP"].to_i,
-          details: details
+          details: details,
+          cluster: cluster
         )
       end
       list
@@ -41,6 +44,16 @@ module OneNHC
 
     def enable(id)
       apply(id, :enable)
+    end
+
+    # Persist the fact that one-nhc disabled this host, so a lost state file or
+    # a host rename does not leave it quarantined forever.
+    def mark_disabled(id)
+      set_flag(id, "yes")
+    end
+
+    def mark_enabled(id)
+      set_flag(id, "no")
     end
 
     private
@@ -74,6 +87,15 @@ module OneNHC
     def apply(id, method)
       host = OpenNebula::Host.new_with_id(id, @client)
       rc   = host.public_send(method)
+
+      raise rc.message if OpenNebula.is_error?(rc)
+
+      true
+    end
+
+    def set_flag(id, value)
+      host = OpenNebula::Host.new_with_id(id, @client)
+      rc   = host.update(%(NHC_DISABLED = "#{value}"\n), true)
 
       raise rc.message if OpenNebula.is_error?(rc)
 

@@ -33,10 +33,10 @@ fi
 : "${NHC_EVACUATE_TARGET:?set NHC_EVACUATE_TARGET to the target host id}"
 
 vms=$(onevm list --csv --no-header --filter "HOST=${NHC_HOST_ID}" \
-  | cut -d, -f1 | sed '/^$/d')
+  | awk -F, '$5 == "runn" {print $1}' | sed '/^$/d')
 
 if [ -z "${vms}" ]; then
-  log "no VMs found on host ${NHC_HOST_ID}"
+  log "no running VMs found on host ${NHC_HOST_ID}"
   exit 0
 fi
 

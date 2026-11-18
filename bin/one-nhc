@@ -4,13 +4,18 @@
 # frozen_string_literal: true
 
 # Locate the library both when running from a checkout and when installed.
+# The first existing candidate wins (environment override, checkout, then the
+# system installation), so running from a checkout never loads an older copy.
 [
   ENV["ONE_NHC_LIB"],
   File.expand_path("../lib", __dir__),
   "/usr/local/lib/one-nhc/lib",
   "/usr/lib/one-nhc/lib"
 ].compact.each do |candidate|
-  $LOAD_PATH.unshift(candidate) if File.file?(File.join(candidate, "one_nhc.rb"))
+  next unless File.file?(File.join(candidate, "one_nhc.rb"))
+
+  $LOAD_PATH.unshift(candidate)
+  break
 end
 
 require "one_nhc"
@@ -171,6 +176,7 @@ def email_test_host
   OneNHC::HostView.new(
     id: 0,
     name: OneNHC.node_name,
+    cluster: "default",
     status: "CRIT",
     state: OneNHC::Controller::HOST_MONITORED,
     sample: Time.now.to_i,

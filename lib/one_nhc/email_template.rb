@@ -20,7 +20,7 @@ module OneNHC
 
     SUMMARY_KEYS = %w[
       NHC_CHECK_COUNT NHC_CRIT NHC_WARN NHC_OK NHC_SKIP NHC_UNKNOWN
-      NHC_STATUS NHC_TIMESTAMP NHC_ERROR
+      NHC_STATUS NHC_TIMESTAMP NHC_ERROR NHC_DISABLED
     ].freeze
 
     ACTION_LABELS = {
@@ -28,17 +28,17 @@ module OneNHC
       "refuse_disable" => "Quarantine refused",
       "enable" => "Host enabled",
       "reenable" => "Trial re-enable",
+      "warn" => "Health warning",
       "test" => "Test notification"
     }.freeze
 
-    GROUP_ORDER = %w[compute storage network services packages hardware other].freeze
+    GROUP_ORDER = %w[compute storage network services hardware other].freeze
 
     GROUP_LABELS = {
       "compute" => "Compute",
       "storage" => "Storage",
       "network" => "Network",
       "services" => "Services",
-      "packages" => "Packages",
       "hardware" => "Hardware",
       "other" => "Other"
     }.freeze
@@ -70,6 +70,13 @@ module OneNHC
                    else
                      ""
                    end
+
+      cluster = payload[:cluster].to_s
+      cluster_row = if cluster.empty?
+                      ""
+                    else
+                      "<tr><td style=\"padding:6px 0;color:#6b7280;\">Cluster</td><td style=\"padding:6px 0;color:#111827;\">#{escape(cluster)}</td></tr>"
+                    end
 
       error_note = if error.empty?
                      ""
@@ -124,6 +131,7 @@ module OneNHC
                             <td style="padding:6px 0;color:#6b7280;">Host</td>
                             <td style="padding:6px 0;font-weight:600;color:#111827;">#{escape(payload[:host])} (id #{escape(payload[:host_id])})</td>
                           </tr>
+                          #{cluster_row}
                           <tr>
                             <td style="padding:6px 0;color:#6b7280;">Time</td>
                             <td style="padding:6px 0;color:#111827;">#{escape(time_string(payload))}</td>
@@ -160,6 +168,8 @@ module OneNHC
       lines << "========================="
       lines << ""
       lines << "Host:    #{payload[:host]} (id #{payload[:host_id]})"
+      cluster = payload[:cluster].to_s
+      lines << "Cluster: #{cluster}" unless cluster.empty?
       lines << "Status:  #{payload[:status]} (#{style_for(payload[:status])[:label]})"
       lines << "Action:  #{payload[:action]} (#{action_label(payload[:action])})"
       lines << "Applied: #{applied_label(payload[:applied])}"
@@ -212,7 +222,6 @@ module OneNHC
       return "storage" if tags.include?("storage")
       return "network" if tags.include?("network")
       return "services" if tags.include?("services")
-      return "packages" if tags.include?("packages")
       return "hardware" if tags.include?("hardware")
 
       "other"

@@ -9,10 +9,11 @@ OneNHC.check(
   timeout: 15,
   tags: %w[hardware gpu]
 ) do |ctx|
-  options  = ctx.config.check("gpu")
-  required = options.fetch("required", false)
-  expected = options["count"]
-  timeout  = Integer(options.fetch("timeout", 10))
+  options   = ctx.config.check("gpu")
+  required  = options.fetch("required", false)
+  expected  = options["count"]
+  count_mig = options.fetch("count_mig", true)
+  timeout   = Integer(options.fetch("timeout", 10))
 
   unless OneNHC::Shell.which("nvidia-smi")
     if required
@@ -38,9 +39,12 @@ OneNHC.check(
     ctx.crit!("nvidia-smi -L failed: #{message.lines.first.to_s.strip}")
   end
 
-  gpus = stdout.to_s.lines.count { |line| line.start_with?("GPU ") }
+  lines    = stdout.to_s.lines.map(&:strip)
+  physical = lines.count { |line| line.start_with?("GPU ") }
+  mig      = lines.count { |line| line.start_with?("MIG") }
+  gpus     = physical + (count_mig ? mig : 0)
 
-  if gpus.zero? && expected.nil?
+  if physical.zero? && expected.nil?
     if required
       ctx.crit!("no NVIDIA GPUs detected")
     else
@@ -48,12 +52,15 @@ OneNHC.check(
     end
   end
 
+  metrics = { "gpus" => gpus, "physical_gpus" => physical, "mig" => mig }
+  detail  = mig.zero? ? "" : " (#{physical} physical, #{mig} MIG)"
+
   if !expected.nil? && gpus != expected.to_i
     ctx.crit!(
-      "expected #{expected} GPU(s), found #{gpus}",
-      metrics: { "gpus" => gpus }
+      "expected #{expected} GPU(s), found #{gpus}#{detail}",
+      metrics: metrics
     )
   else
-    ctx.ok!("#{gpus} GPU(s) present", metrics: { "gpus" => gpus })
+    ctx.ok!("#{gpus} GPU(s) present#{detail}", metrics: metrics)
   end
 end

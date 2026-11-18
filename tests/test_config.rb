@@ -47,6 +47,10 @@ class TestConfig < Minitest::Test
     assert_raises(ArgumentError) { config("cooldown" => -1).validate! }
   end
 
+  def test_rejects_non_boolean_notify_on_warn
+    assert_raises(ArgumentError) { config("notify_on_warn" => "yes").validate! }
+  end
+
   def test_rejects_zero_min_healthy_hosts
     error = assert_raises(ArgumentError) do
       config("min_healthy_hosts" => 0).validate!
@@ -56,6 +60,17 @@ class TestConfig < Minitest::Test
 
   def test_accepts_min_healthy_hosts
     assert config("min_healthy_hosts" => 3).validate!
+  end
+
+  def test_rejects_invalid_min_healthy_scope
+    error = assert_raises(ArgumentError) do
+      config("min_healthy_hosts_scope" => "region").validate!
+    end
+    assert_includes error.message, "min_healthy_hosts_scope"
+  end
+
+  def test_accepts_cluster_scope
+    assert config("min_healthy_hosts_scope" => "cluster").validate!
   end
 
   def test_accepts_zero_reenable_after

@@ -18,6 +18,7 @@ module OneNHC
       "last_action" => 0,
       "last_enable" => 0,
       "last_sample" => 0,
+      "warn_notified" => false,
       "notified_action" => nil,
       "last_status" => nil
     }.freeze

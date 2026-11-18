@@ -63,7 +63,7 @@ cd opennebula-nhc
 # On every hypervisor and on the frontend:
 sudo make install
 
-# On every hypervisor: refresh the heavy checks (smart, gpu) every 15 minutes
+# On every hypervisor: refresh the heavy checks (smart, gpu-fabric) every 15 minutes
 sudo make install-cache-systemd
 sudo systemctl daemon-reload
 sudo systemctl enable --now one-nhc-cache.timer
@@ -113,16 +113,15 @@ loop instead, run `one-nhc controller --watch`.
 | `service`          | crit     | configured systemd units or processes not running          |
 | `raid`             | crit     | software RAID (`md`) array degraded or failed              |
 | `smart`            | crit     | SMART health of configured disks (heavy, cached)           |
-| `gpu`              | crit     | NVIDIA GPU count differs from expected (fast)              |
+| `gpu`              | crit     | NVIDIA GPU/MIG count differs from expected (fast)          |
 | `gpu-fabric`       | crit     | GPU Fabric State/Status not healthy (heavy, cached)        |
-| `package-version`  | crit     | installed package version does not match the expected one  |
 | `ofed-version`     | crit     | MLNX OFED version does not match (Network group)          |
 
 Statuses: `OK`, `WARN`, `CRIT`, `SKIP` (not applicable) and `UNKNOWN` (could not
 determine). `SKIP` never triggers a quarantine.
 
 The optional checks (`fs-usage`, `network-interface`, `infiniband`, `service`,
-`raid`, `smart`, `gpu`, `gpu-fabric`, `package-version`) are **disabled by
+`raid`, `smart`, `gpu`, `gpu-fabric`, `ofed-version`) are **disabled by
 default** and have commented examples in `etc/one-nhc.conf`. Use
 `hosts:`/`exclude:` to enable them only on the relevant nodes.
 
@@ -134,13 +133,16 @@ run them**. The probe reads the cache file (default
 it atomically, and `one-nhc-cache.timer` refreshes it every 15 minutes.
 
 `gpu` is deliberately **fast**: it only runs `nvidia-smi -L` on every probe
-cycle, so a GPU that disappears is detected in the next sample. The expensive
-Fabric query lives in `gpu-fabric` and is cached.
+cycle, so a GPU that disappears is detected in the next sample. By default it
+counts physical GPUs and MIG partitions; set `count_mig: false` to count only
+physical GPUs. The expensive Fabric query lives in `gpu-fabric` and is cached.
 
 If the cache entry is missing or stale, the probe reports `UNKNOWN`, never
-`CRIT`, so a missing timer cannot quarantine a host. `one-nhc check` still runs
-the heavy checks on demand, and `one-nhc cache --quiet` refreshes the cache
-without printing anything.
+`CRIT`, so a missing timer cannot quarantine a host. The cache file carries a
+`schema_version`; legacy files without it are still accepted, and files from a
+different schema are ignored. `one-nhc check` still runs the heavy checks on
+demand, and `one-nhc cache --quiet` refreshes the cache without printing
+anything.
 
 `smartctl` often needs root. If the disks are not readable as `oneadmin`, set
 `smart.sudo: true` and add a sudoers rule for `smartctl`, or the check reports
@@ -177,8 +179,11 @@ clush/dsh-style hostlists:
 
 ```yaml
 groups:
-  compute: "node[01-10]"
-  gpu: "gpu[01-02]"
+  default:
+    cpu: "node001,node002"
+    gpu: "gpunv0[01,02],gpuamd0[01-10]"
+  LLM:
+    fat: "fat0[01-10]"
 
 checks:
   fs-ro:
@@ -186,12 +191,19 @@ checks:
     hosts: all
   infiniband:
     enabled: true
-    hosts: "@gpu"
+    hosts: "@default/gpu"
+  fs-usage:
+    enabled: true
+    hosts: "@LLM/fat"
   datastore-mounts:
     enabled: true
-    hosts: "@compute,stor[01,03]"
+    hosts: "@default/cpu,stor[01,03]"
     exclude: "node05"
 ```
+
+Nested groups are flattened to `cluster/role`, so `@default/gpu` and
+`@LLM/fat` work like any other group. Flat groups (`compute: "node[01-10]"`,
+used as `@compute`) keep working unchanged.
 
 | Expression | Matches |
 |---|---|
@@ -202,6 +214,7 @@ checks:
 | `node[01-03,08,10-12]` | ranges and single values |
 | `node*` | glob (`File.fnmatch`) |
 | `@group` | expansion of `groups.<group>` |
+| `@cluster/role` | expansion of a nested group |
 
 A check that is not targeted at the local host is **not executed and not
 reported**, so monitoring does not fill with `SKIP` for checks that do not
@@ -234,6 +247,7 @@ do. The mode is the main safety switch:
 controller:
   mode: act          # monitor | notify | act
   dry_run: false
+  notify_on_warn: true
   consecutive_crit: 3
   consecutive_ok: 2
   cooldown: 300
@@ -241,6 +255,7 @@ controller:
   monitor_grace: 900
   never_disable_last: true
   min_healthy_hosts: 1
+  min_healthy_hosts_scope: global   # global | cluster
   include_hosts: all
   # exclude_hosts: "stor[01-02]"
   interval: 60
@@ -256,10 +271,18 @@ Safety rules:
   `CRIT` samples and re-enabled after `consecutive_ok` consecutive `OK`
   samples. Samples are identified by `NHC_TIMESTAMP`, so running the controller
   more often than the probe does not speed up (or fake) the counter.
+- **WARN alerts:** with `notify_on_warn: true` (default) the controller sends
+  one notification per WARN episode. WARN never disables a host and never runs
+  hooks; `notify_on_warn: false` silences these alerts.
 - **Cooldown:** at least `cooldown` seconds between actions on the same host.
 - **Minimum healthy hosts:** it refuses to disable when fewer than
-  `min_healthy_hosts` healthy monitored hosts would remain. Setting
-  `never_disable_last: false` disables the safeguard entirely.
+  `min_healthy_hosts` healthy monitored hosts would remain. With
+  `min_healthy_hosts_scope: cluster` the count is per OpenNebula cluster
+  (`CLUSTER`), so a shared failure cannot empty one cluster while another still
+  has healthy hosts. `global` keeps the previous behaviour. Setting
+  `never_disable_last: false` disables the safeguard entirely. Note that with
+  `min_healthy_hosts: 2`, a two-host cluster can never have a host quarantined
+  by one-nhc; use `1` there if quarantine is required.
 - **Single controller:** a lock file next to the state prevents the systemd
   timer and a manual `--watch` from running at the same time; the second
   process skips the cycle.
@@ -267,6 +290,10 @@ Safety rules:
   recovery resets the episode.
 - **External changes:** if an operator enables a host outside one-nhc, the
   controller notices and clears its own state.
+- **State resilience:** when it disables a host, the controller writes
+  `NHC_DISABLED="yes"` to the host template and clears it on enable. If the
+  state file is lost or the host is renamed, the attribute lets the controller
+  recognise its own quarantine and still re-enable the host.
 - **Stale monitoring:** a disabled host is not monitored, so its `NHC_STATUS`
   does not change. `reenable_after` (opt-in, 0 = never) enables it again after
   that delay as a trial, and `monitor_grace` ignores the stale `CRIT` value
@@ -297,12 +324,12 @@ The command receives:
 | `NHC_HOST` | host name |
 | `NHC_HOST_ID` | OpenNebula host id |
 | `NHC_STATUS` | `NHC_STATUS` value (`CRIT`, `OK`, …) |
-| `NHC_ACTION` | `disable`, `enable`, `reenable` or `refuse_disable` |
+| `NHC_ACTION` | `disable`, `enable`, `reenable`, `refuse_disable` or `warn` |
 | `NHC_APPLIED` | `true` when the action was applied |
 
-The webhook receives a JSON object with the same fields plus `time`, `sample`
-and `details` (the host `NHC_*` attributes). Failures are logged and never
-abort the controller cycle.
+The webhook receives a JSON object with the same fields plus `time`, `sample`,
+`cluster` and `details` (the host `NHC_*` attributes). Failures are logged and
+never abort the controller cycle.
 
 #### Email
 
@@ -326,8 +353,8 @@ controller:
 ```
 
 By default the checks table is flat (`group_by: none`). Set `group_by: tags` to
-group it by the check tags (Compute, Storage, Network, Services, Packages,
-Hardware, Other), with a `Group healthy/total` summary above the table and
+group it by the check tags (Compute, Storage, Network, Services, Hardware,
+Other), with a `Group healthy/total` summary above the table and
 `failures_first` putting problems before OK inside each group. The flat layout
 is unchanged when grouping is not enabled.
 

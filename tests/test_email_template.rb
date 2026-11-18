@@ -75,6 +75,7 @@ class TestEmailTemplate < Minitest::Test
       message: "host=node01 id=0 status=CRIT action=disable (notify): CRIT 1/1",
       host: "node01",
       host_id: 0,
+      cluster: "default",
       status: "CRIT",
       action: "disable",
       applied: false,
@@ -90,6 +91,7 @@ class TestEmailTemplate < Minitest::Test
 
     assert_includes html, "Host health alert"
     assert_includes html, "node01"
+    assert_includes html, "Cluster"
     assert_includes html, "CRIT"
     assert_includes html, "disable"
     assert_includes html, "3 checks"
@@ -107,6 +109,7 @@ class TestEmailTemplate < Minitest::Test
 
     assert_includes text, "one-nhc host health alert"
     assert_includes text, "Host:    node01 (id 0)"
+    assert_includes text, "Cluster: default"
     assert_includes text, "Summary: 3 checks · 1 crit · 0 warn · 2 ok"
     assert_includes text, "Checks:"
     assert_includes text, "CRIT   fs-ro"
@@ -151,6 +154,11 @@ class TestEmailTemplate < Minitest::Test
   def test_applied_is_rendered_as_yes_or_no
     assert_includes OneNHC::EmailTemplate.text(payload(applied: true)), "Applied: yes"
     assert_includes OneNHC::EmailTemplate.text(payload(applied: false)), "Applied: no"
+  end
+
+  def test_warn_action_label
+    text = OneNHC::EmailTemplate.text(payload(status: "WARN", action: "warn"))
+    assert_includes text, "Health warning"
   end
 
   def test_grouped_html_has_sections_and_failures_first

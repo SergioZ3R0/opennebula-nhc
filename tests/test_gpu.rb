@@ -90,4 +90,52 @@ class TestGpu < Minitest::Test
       end
     end
   end
+
+  def mig_output(physical, mig)
+    lines = (0...physical).map { |i| "GPU #{i}: NVIDIA A100 (UUID: GPU-#{i})\n" }
+    partitions = (0...mig).map do |i|
+      "  MIG 1g.5gb Device #{i}: (UUID: MIG-#{i})\n"
+    end
+    (lines + partitions).join
+  end
+
+  def test_mig_partitions_are_counted_by_default
+    responder = ->(_command, **) { [mig_output(2, 4), "", FakeStatus.new(0), :ok] }
+
+    with_stub(OneNHC::Shell, :which, "/usr/bin/nvidia-smi") do
+      with_stub(OneNHC::Shell, :capture, responder) do
+        result = check.call(config("count" => 6))
+        assert_equal :ok, result.status
+        assert_equal 6, result.metrics["gpus"]
+        assert_equal 2, result.metrics["physical_gpus"]
+        assert_equal 4, result.metrics["mig"]
+        assert_includes result.message, "2 physical, 4 MIG"
+      end
+    end
+  end
+
+  def test_count_mig_false_counts_physical_gpus_only
+    responder = ->(_command, **) { [mig_output(2, 4), "", FakeStatus.new(0), :ok] }
+
+    with_stub(OneNHC::Shell, :which, "/usr/bin/nvidia-smi") do
+      with_stub(OneNHC::Shell, :capture, responder) do
+        result = check.call(config("count" => 2, "count_mig" => false))
+        assert_equal :ok, result.status
+        assert_equal 2, result.metrics["gpus"]
+        assert_equal 4, result.metrics["mig"]
+      end
+    end
+  end
+
+  def test_mig_count_can_trigger_a_crit
+    responder = ->(_command, **) { [mig_output(1, 2), "", FakeStatus.new(0), :ok] }
+
+    with_stub(OneNHC::Shell, :which, "/usr/bin/nvidia-smi") do
+      with_stub(OneNHC::Shell, :capture, responder) do
+        result = check.call(config("count" => 1))
+        assert_equal :crit, result.status
+        assert_includes result.message, "found 3"
+      end
+    end
+  end
 end

@@ -76,6 +76,33 @@ class TestTargeting < Minitest::Test
     assert cfg.validate!
   end
 
+  def test_nested_groups_are_flattened
+    cfg = OneNHC::Config.new(
+      "groups" => {
+        "default" => {
+          "cpu" => "node[01-02]",
+          "gpu" => "gpu[01-02]"
+        },
+        "LLM" => {
+          "fat" => "fat[01-10]"
+        }
+      },
+      "checks" => {
+        "fs-ro" => { "enabled" => true, "hosts" => "@default/gpu" }
+      }
+    )
+
+    assert cfg.validate!
+    assert_equal "gpu[01-02]", cfg["groups"]["default/gpu"]
+    assert_equal "fat[01-10]", cfg["groups"]["LLM/fat"]
+    assert OneNHC::Hostlist.match?(
+      "@default/gpu", "gpu01", groups: cfg["groups"]
+    )
+    refute OneNHC::Hostlist.match?(
+      "@default/gpu", "fat01", groups: cfg["groups"]
+    )
+  end
+
   def test_probe_results_omit_not_targeted_by_default
     cfg = config(
       "fs-ro" => { "enabled" => true, "hosts" => "node01" },
