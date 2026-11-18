@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: 2026 SergioZ3R0
+# SPDX-License-Identifier: Apache-2.0
+---
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+
+      - name: Tests
+        run: ruby -Ilib -Itests tests/run.rb
+
+      - name: Build release artifact
+        run: make dist
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes

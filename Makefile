@@ -7,11 +7,23 @@ BINDIR ?= $(PREFIX)/bin
 CONFDIR ?= /etc/one-nhc
 ON_REMOTES ?= /var/lib/one/remotes/im/kvm-probes.d/host/system
 SYSTEMD ?= /etc/systemd/system
+DISTDIR ?= dist
+VERSION := $(shell ruby -Ilib -e 'require "one_nhc/version"; print OneNHC::VERSION')
 
-.PHONY: test install probe install-probe install-systemd install-cache-systemd uninstall
+.PHONY: test dist install probe install-probe install-systemd install-cache-systemd uninstall
 
 test:
 	ruby -Ilib -Itests tests/run.rb
+
+# Release artifact. Requires a clean, committed tree and git.
+dist:
+	rm -rf $(DISTDIR)
+	mkdir -p $(DISTDIR)
+	git archive --format=tar.gz --prefix=opennebula-nhc-$(VERSION)/ \
+		-o $(DISTDIR)/opennebula-nhc-$(VERSION).tar.gz HEAD
+	cd $(DISTDIR) && sha256sum opennebula-nhc-$(VERSION).tar.gz \
+		> opennebula-nhc-$(VERSION).tar.gz.sha256
+	@echo "Built $(DISTDIR)/opennebula-nhc-$(VERSION).tar.gz"
 
 install:
 	install -d $(DESTDIR)$(LIBDIR)
@@ -34,7 +46,7 @@ install-systemd:
 	install -m 0644 systemd/one-nhc-controller.timer $(DESTDIR)$(SYSTEMD)/
 	@echo "Run: systemctl daemon-reload && systemctl enable --now one-nhc-controller.timer"
 
-# Hypervisors: timer that refreshes the heavy-check cache (smart, gpu).
+# Hypervisors: timer that refreshes the heavy-check cache (smart, gpu-fabric).
 install-cache-systemd:
 	install -d $(DESTDIR)$(SYSTEMD)
 	install -m 0644 systemd/one-nhc-cache.service $(DESTDIR)$(SYSTEMD)/

@@ -100,6 +100,14 @@ journalctl -u one-nhc-controller.service -f
 The timer runs `one-nhc controller --once --quiet` every two minutes. For a foreground
 loop instead, run `one-nhc controller --watch`.
 
+### Production rollout
+
+Do not jump straight to `act` in production. The
+[production runbook](docs/runbook.md) describes the probe install, the frontend
+wrapper, the monitor -> notify -> act phases, a canary test matrix, rollback and
+emergency stop. A complete `default`/`LLM` example lives in
+[`examples/production.conf`](examples/production.conf).
+
 ## Checks
 
 | Check              | Severity | What it detects                                            |
@@ -476,7 +484,10 @@ and only then to `act` with `dry_run: true` before enabling real actions.
   `onehost disable/enable`.
 - **M3 (done):** HPC checks, heavy-check cache, SMART and GPU Fabric, hooks;
   evacuation is an external hook example, not a built-in action.
-- **M4:** docs/blog, an upstream docs PR, packaging and release automation.
+- **M4 (in progress):** production runbook, changelog, release tarball and
+  GitHub release automation; docs/blog and an upstream PR are still pending.
+
+See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
 ## Development
 
