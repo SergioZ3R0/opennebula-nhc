@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-19
+
+Icinga/Nagios integration and PCI passthrough support.
+
 ### Added
 
 - `controller.notify.enabled: false` to keep notification channels configured
@@ -77,5 +81,6 @@ First release with the complete probe, cache and controller feature set.
 
 - Added grouped email notifications (`group_by: tags`, `failures_first`).
 
-[Unreleased]: https://github.com/SergioZ3R0/opennebula-nhc/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/SergioZ3R0/opennebula-nhc/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/SergioZ3R0/opennebula-nhc/releases/tag/v0.10.0
 [0.9.0]: https://github.com/SergioZ3R0/opennebula-nhc/releases/tag/v0.9.0
