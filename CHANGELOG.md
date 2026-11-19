@@ -15,6 +15,8 @@ and this project follows [Semantic Versioning](https://semver.org/).
   data.
 - `one-nhc status` to read `NHC_STATUS` through the OpenNebula API, with
   `--nagios`, `--host` and `--json`.
+- `pci` check for GPU/IB passthrough hosts: presence, vendor/device, expected
+  driver and optional IOMMU group.
 - `docs/icinga.md` with CheckCommand, NRPE, fast/heavy and notification
   examples.
 

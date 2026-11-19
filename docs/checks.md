@@ -31,7 +31,7 @@ together, and how to add a new check without breaking the monitoring cycle.
 ### Current fast checks
 
 `fs-ro`, `datastore-mounts`, `libvirt`, `fs-usage`, `network-interface`,
-`infiniband`, `service`, `raid`, `gpu` (count only) and `ofed-version`.
+`infiniband`, `service`, `raid`, `gpu` (count only), `pci` and `ofed-version`.
 `ofed-version` carries the `network` tag, so it appears in the Network group in
 grouped emails.
 
@@ -46,6 +46,28 @@ grouped emails.
 disappears is detected in the next probe sample. It counts physical GPUs and,
 by default, MIG partitions (`count_mig: true`); set `count_mig: false` to count
 only physical GPUs. Only Fabric is cached.
+
+### GPU passthrough vs gpu
+
+`gpu` and `gpu-fabric` need the NVIDIA driver on the host. On a passthrough
+host the GPU is bound to `vfio-pci`, `nvidia-smi` cannot see it, and those
+checks report `SKIP` or `CRIT` without validating anything useful.
+
+Use the `pci` check on passthrough hosts:
+
+```yaml
+checks:
+  pci:
+    enabled: true
+    hosts: "@default/gpu"
+    devices:
+      - {name: "RTX A4000", vendor: "10de", device: "24b0", driver: "vfio-pci", iommu: true}
+      - {name: "RTX A4000 audio", vendor: "10de", device: "228b", driver: "vfio-pci", iommu: true}
+```
+
+It verifies presence, vendor/device (or PCI address), the expected driver and,
+optionally, the IOMMU group. It does not read GPU temperature, ECC or Fabric;
+those require the driver inside the VM or vendor/BMC tools.
 
 Future heavy candidates: NFS write tests, RAID scrub status, firmware inventory.
 

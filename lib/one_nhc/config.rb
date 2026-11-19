@@ -108,6 +108,11 @@ module OneNHC
           "required" => false,
           "timeout" => 10
         },
+        "pci" => {
+          "enabled" => false,
+          "sysfs" => "/sys/bus/pci/devices",
+          "devices" => []
+        },
         "ofed-version" => {
           "enabled" => false,
           "package" => "mlnx-ofa_kernel",

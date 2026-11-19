@@ -56,7 +56,7 @@ To run only selected checks:
 ```bash
 # Every 1-5 minutes
 /usr/local/bin/one-nhc check --nagios \
-  --only fs-ro,datastore-mounts,libvirt,fs-usage,network-interface,infiniband,service,raid,gpu,ofed-version
+  --only fs-ro,datastore-mounts,libvirt,fs-usage,network-interface,infiniband,service,raid,gpu,pci,ofed-version
 
 # Every 15 minutes, longer timeout
 /usr/local/bin/one-nhc check --nagios --only smart,gpu-fabric
@@ -94,7 +94,7 @@ On the hypervisor:
 
 ```text
 command[check_one_nhc]=/usr/local/bin/one-nhc check --nagios
-command[check_one_nhc_fast]=/usr/local/bin/one-nhc check --nagios --only fs-ro,datastore-mounts,libvirt,fs-usage,network-interface,infiniband,service,raid,gpu,ofed-version
+command[check_one_nhc_fast]=/usr/local/bin/one-nhc check --nagios --only fs-ro,datastore-mounts,libvirt,fs-usage,network-interface,infiniband,service,raid,gpu,pci,ofed-version
 command[check_one_nhc_heavy]=/usr/local/bin/one-nhc check --nagios --only smart,gpu-fabric
 ```
 

@@ -123,13 +123,14 @@ emergency stop. A complete `default`/`LLM` example lives in
 | `smart`            | crit     | SMART health of configured disks (heavy, cached)           |
 | `gpu`              | crit     | NVIDIA GPU/MIG count differs from expected (fast)          |
 | `gpu-fabric`       | crit     | GPU Fabric State/Status not healthy (heavy, cached)        |
+| `pci`              | crit     | configured PCI devices missing or bound to the wrong driver |
 | `ofed-version`     | crit     | MLNX OFED version does not match (Network group)          |
 
 Statuses: `OK`, `WARN`, `CRIT`, `SKIP` (not applicable) and `UNKNOWN` (could not
 determine). `SKIP` never triggers a quarantine.
 
 The optional checks (`fs-usage`, `network-interface`, `infiniband`, `service`,
-`raid`, `smart`, `gpu`, `gpu-fabric`, `ofed-version`) are **disabled by
+`raid`, `smart`, `gpu`, `gpu-fabric`, `pci`, `ofed-version`) are **disabled by
 default** and have commented examples in `etc/one-nhc.conf`. Use
 `hosts:`/`exclude:` to enable them only on the relevant nodes.
 
@@ -144,6 +145,12 @@ it atomically, and `one-nhc-cache.timer` refreshes it every 15 minutes.
 cycle, so a GPU that disappears is detected in the next sample. By default it
 counts physical GPUs and MIG partitions; set `count_mig: false` to count only
 physical GPUs. The expensive Fabric query lives in `gpu-fabric` and is cached.
+
+On hosts where the GPU is passed through to a VM (`vfio-pci`), the host has no
+NVIDIA driver and `nvidia-smi` cannot see the device. Use the `pci` check there
+to verify that the GPU and its audio function are present and bound to the
+expected driver. `gpu` and `gpu-fabric` are for hosts where the GPU is visible
+to the operating system.
 
 If the cache entry is missing or stale, the probe reports `UNKNOWN`, never
 `CRIT`, so a missing timer cannot quarantine a host. The cache file carries a
